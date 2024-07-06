@@ -1,3 +1,4 @@
-pub(crate) mod store;
+pub(crate) mod state;
 pub mod error;
-pub(crate) mod ns;
+pub(crate) mod client;
+pub(crate) mod config;
