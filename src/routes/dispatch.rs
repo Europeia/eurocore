@@ -1,6 +1,4 @@
-use axum::{
-    extract::{Json, State},
-};
+use axum::extract::{Json, State};
 use tracing::instrument;
 use crate::core::error::Error;
 use crate::core::state::AppState;
@@ -17,13 +15,9 @@ pub(crate) async fn post_dispatch(
     State(mut state): State<AppState>,
     Json(params): Json<NewDispatchParams>,
 ) -> Result<String, Error> {
-    tracing::debug!("Creating dispatch from params");
-    let dispatch = Dispatch::try_from_new_params(params, &state.client.nation)?;
+    let dispatch_id = state.new_dispatch(params).await?;
 
-    tracing::debug!("Adding dispatch");
-    let message = state.client.add_dispatch(dispatch).await?;
-
-    Ok(format!("Dispatch: {} added", message))
+    Ok(format!("Dispatch: {} added", dispatch_id))
 }
 
 #[instrument(skip(state))]
@@ -31,13 +25,9 @@ pub(crate) async fn edit_dispatch(
     State(mut state): State<AppState>,
     Json(params): Json<EditDispatchParams>,
 ) -> Result<String, Error> {
-    tracing::debug!("Creating dispatch from params");
-    let dispatch = Dispatch::try_from_edit_params(params, &state.client.nation)?;
+    let dispatch_id = state.edit_dispatch(params).await?;
 
-    tracing::debug!("Editing dispatch");
-    let message = state.client.add_dispatch(dispatch).await?;
-
-    Ok(format!("Dispatch: {} edited", message))
+    Ok(format!("Dispatch: {} edited", dispatch_id))
 }
 
 #[instrument(skip(state))]

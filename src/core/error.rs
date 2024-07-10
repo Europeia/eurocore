@@ -1,42 +1,39 @@
 use axum::http::StatusCode;
-use axum::response::{Response, IntoResponse};
+use axum::response::{IntoResponse, Response};
 use axum_macros::FromRequest;
 use serde::Serialize;
+use std::num::ParseIntError;
 
-pub enum Error {
+#[derive(Debug)]
+pub enum ConfigError {
     Config(config::ConfigError),
     DatabaseMigration(sqlx::migrate::MigrateError),
     IO(std::io::Error),
     DatabaseConnectionFailure(sqlx::Error),
     ReqwestClientBuild(reqwest::Error),
+    Regex(regex::Error),
+}
+
+pub enum Error {
     HTTPClient(reqwest::Error),
     ExternalServer(reqwest::Error),
     URLEncode(serde_urlencoded::ser::Error),
     HeaderDecode(reqwest::header::ToStrError),
     Deserialize(quick_xml::DeError),
     InvalidFactbookCategory,
-    Regex(regex::Error),
+    ParseInt(ParseIntError),
+    SQL(sqlx::Error),
     Placeholder,
+    DispatchNotFound,
+    JWTEncode(jsonwebtoken::errors::Error),
+    JWTDecode(jsonwebtoken::errors::Error),
+    NoJWT,
+    Unauthorized,
 }
 
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Config(e) => {
-                write!(f, "Config error: {}", e)
-            }
-            Error::DatabaseMigration(e) => {
-                write!(f, "Database migration error: {}", e)
-            }
-            Error::IO(e) => {
-                write!(f, "IO error: {}", e)
-            }
-            Error::DatabaseConnectionFailure(e) => {
-                write!(f, "Database connection error: {}", e)
-            }
-            Error::ReqwestClientBuild(e) => {
-                write!(f, "Reqwest client build error: {}", e)
-            }
             Error::HTTPClient(e) => {
                 write!(f, "Reqwest client internal error: {}", e)
             }
@@ -55,11 +52,29 @@ impl std::fmt::Debug for Error {
             Error::InvalidFactbookCategory => {
                 write!(f, "Invalid factbook category")
             }
-            Error::Regex(e) => {
-                write!(f, "Regex error: {}", e)
+            Error::ParseInt(e) => {
+                write!(f, "Parse int error: {}", e)
+            }
+            Error::SQL(e) => {
+                write!(f, "SQL error: {}", e)
             }
             Error::Placeholder => {
                 write!(f, "No dispatch ID returned")
+            }
+            Error::DispatchNotFound => {
+                write!(f, "Dispatch not found")
+            }
+            Error::JWTEncode(e) => {
+                write!(f, "JWT encode error: {}", e)
+            }
+            Error::JWTDecode(e) => {
+                write!(f, "JWT decode error: {}", e)
+            }
+            Error::NoJWT => {
+                write!(f, "No JWT provided")
+            }
+            Error::Unauthorized => {
+                write!(f, "Unauthorized")
             }
         }
     }
@@ -75,48 +90,34 @@ impl IntoResponse for Error {
         tracing::error!("{:?}", self);
 
         let (status, message) = match self {
-            Error::Config(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Config error")
-            }
-            Error::DatabaseMigration(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database migration error")
-            }
-            Error::IO(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "IO error")
-            }
-            Error::DatabaseConnectionFailure(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database connection failure")
-            }
-            Error::ReqwestClientBuild(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Reqwest client build error")
-            }
-            Error::HTTPClient(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Reqwest client internal error")
-            }
-            Error::ExternalServer(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Server error")
-            }
-            Error::URLEncode(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "URL encoding error")
-            }
-            Error::HeaderDecode(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Header decode error")
-            }
-            Error::Deserialize(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Deserialization error")
-            }
+            Error::HTTPClient(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Reqwest client internal error",
+            ),
+            Error::ExternalServer(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Server error"),
+            Error::URLEncode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "URL encoding error"),
+            Error::HeaderDecode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Header decode error"),
+            Error::Deserialize(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Deserialization error"),
             Error::InvalidFactbookCategory => {
                 (StatusCode::BAD_REQUEST, "Invalid factbook category")
             }
-            Error::Regex(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Regex error")
-            }
-            Error::Placeholder => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "No dispatch ID returned")
-            }
+            Error::ParseInt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Parse int error"),
+            Error::SQL(_) => (StatusCode::INTERNAL_SERVER_ERROR, "SQL error"),
+            Error::Placeholder => (StatusCode::INTERNAL_SERVER_ERROR, "???"),
+            Error::DispatchNotFound => (StatusCode::NOT_FOUND, "Dispatch not found"),
+            Error::JWTEncode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT encode error"),
+            Error::JWTDecode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT decode error"),
+            Error::NoJWT => (StatusCode::UNAUTHORIZED, "No JWT provided"),
+            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
         };
 
-        (status, AppJson(ErrorResponse { message: message.to_string() })).into_response()
+        (
+            status,
+            AppJson(ErrorResponse {
+                message: message.to_string(),
+            }),
+        )
+            .into_response()
     }
 }
 
