@@ -9,6 +9,7 @@ use sqlx::Row;
 pub(crate) struct AppState {
     pub(crate) pool: PgPool,
     pub(crate) client: Client,
+    pub(crate) secret: String,
 }
 
 impl AppState {
@@ -17,6 +18,7 @@ impl AppState {
         user: &str,
         nation: String,
         password: String,
+        secret: String,
     ) -> Result<Self, ConfigError> {
         let pool = PgPoolOptions::new()
             .max_connections(5)
@@ -26,7 +28,11 @@ impl AppState {
 
         let client = Client::new(user, nation, password)?;
 
-        Ok(AppState { pool, client })
+        Ok(AppState {
+            pool,
+            client,
+            secret,
+        })
     }
 
     pub(crate) async fn new_dispatch(mut self, params: NewDispatchParams) -> Result<i32, Error> {
@@ -64,7 +70,7 @@ impl AppState {
             "SELECT dispatch_id FROM dispatches WhERE is_active = true AND dispatch_id = $1;",
         )
         .bind(dispatch.id.unwrap())
-        .map(|row: PgRow| row.get(0))
+        .map(|row: PgRow| row.get("dispatch_id"))
         .fetch_one(&self.pool)
         .await
         {
@@ -95,22 +101,60 @@ impl AppState {
         &self,
         nation: &str,
     ) -> Result<Option<User>, Error> {
-        match sqlx::query("SELECT nation, password_hash FROM users WHERE nation = $1;")
-            .bind(nation)
-            .map(map_user)
-            .fetch_one(&self.pool)
-            .await
+        match sqlx::query(
+            "SELECT
+            users.nation,
+            users.password_hash,
+            json_agg(permissions.name) AS permissions
+            FROM
+                users
+            JOIN
+                user_permissions ON users.id = user_permissions.user_id
+            JOIN
+                permissions ON user_permissions.permission_id = permissions.id
+            WHERE
+                users.nation = $1
+            GROUP BY
+                users.id, users.nation;",
+        )
+        .bind(nation)
+        .map(map_user)
+        .fetch_one(&self.pool)
+        .await
         {
             Ok(user) => Ok(Some(user)),
             Err(sqlx::Error::RowNotFound) => Ok(None),
             Err(e) => Err(Error::SQL(e)),
         }
     }
+
+    pub(crate) async fn register_user(
+        &self,
+        nation: &str,
+        password_hash: &str,
+    ) -> Result<(), Error> {
+        if let Err(e) = sqlx::query("INSERT INTO users (nation, password_hash) VALUES ($1, $2);")
+            .bind(nation)
+            .bind(password_hash)
+            .execute(&self.pool)
+            .await
+        {
+            return match e {
+                sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+                    Err(Error::UserAlreadyExists)
+                }
+                _ => Err(Error::SQL(e)),
+            };
+        }
+
+        Ok(())
+    }
 }
 
 fn map_user(row: PgRow) -> User {
     User {
-        nation: row.get(1),
-        password_hash: row.get(2),
+        nation: row.get("nation"),
+        password_hash: row.get("password_hash"),
+        claims: row.get("permissions"),
     }
 }

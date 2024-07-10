@@ -29,6 +29,8 @@ pub enum Error {
     JWTDecode(jsonwebtoken::errors::Error),
     NoJWT,
     Unauthorized,
+    UserAlreadyExists,
+    Bcrypt(bcrypt::BcryptError),
 }
 
 impl std::fmt::Debug for Error {
@@ -76,6 +78,12 @@ impl std::fmt::Debug for Error {
             Error::Unauthorized => {
                 write!(f, "Unauthorized")
             }
+            Error::UserAlreadyExists => {
+                write!(f, "User already exists")
+            }
+            Error::Bcrypt(e) => {
+                write!(f, "Bcrypt error: {}", e)
+            }
         }
     }
 }
@@ -109,6 +117,8 @@ impl IntoResponse for Error {
             Error::JWTDecode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT decode error"),
             Error::NoJWT => (StatusCode::UNAUTHORIZED, "No JWT provided"),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
+            Error::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
+            Error::Bcrypt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Bcrypt error"),
         };
 
         (

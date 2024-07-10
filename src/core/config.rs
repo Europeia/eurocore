@@ -12,4 +12,5 @@ pub(crate) struct Args {
     pub(crate) port: u16,
     pub(crate) ns_nation: String,
     pub(crate) ns_password: String,
+    pub(crate) secret: String,
 }

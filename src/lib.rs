@@ -47,6 +47,7 @@ pub async fn run() -> Result<(), Error> {
         &config.user,
         config.ns_nation,
         config.ns_password,
+        config.secret,
     )
     .await?;
 
@@ -57,6 +58,7 @@ pub async fn run() -> Result<(), Error> {
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
+        .route("/register", post(routes::auth::register))
         .route("/login", post(routes::auth::sign_in))
         .route(
             "/dispatch",
