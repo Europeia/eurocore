@@ -64,7 +64,10 @@ pub(crate) async fn authorize(
     let (bearer, token) = (header.next(), header.next());
     let token_data = decode_jwt(token.unwrap().to_string(), &state.secret)?;
 
-    let current_user = match state.retrieve_user_by_nation(&token_data.claims.sub).await {
+    let current_user = match state
+        .retrieve_user_by_username(&token_data.claims.sub)
+        .await
+    {
         Ok(Some(user)) => user,
         Ok(None) => return Err(Error::Unauthorized),
         Err(e) => return Err(e),

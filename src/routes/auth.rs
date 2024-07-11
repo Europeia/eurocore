@@ -16,7 +16,7 @@ pub(crate) async fn sign_in(
     State(state): State<AppState>,
     Json(user_data): Json<LoginData>,
 ) -> Result<Json<String>, Error> {
-    let user = match state.retrieve_user_by_nation(&user_data.username).await {
+    let user = match state.retrieve_user_by_username(&user_data.username).await {
         Ok(resp) => match resp {
             Some(user) => user,
             None => return Err(Error::Unauthorized),

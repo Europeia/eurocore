@@ -97,13 +97,13 @@ impl AppState {
         Ok(dispatch_id)
     }
 
-    pub(crate) async fn retrieve_user_by_nation(
+    pub(crate) async fn retrieve_user_by_username(
         &self,
-        nation: &str,
+        username: &str,
     ) -> Result<Option<User>, Error> {
         match sqlx::query(
             "SELECT
-            users.nation,
+            users.username,
             users.password_hash,
             json_agg(permissions.name) AS permissions
             FROM
@@ -115,9 +115,9 @@ impl AppState {
             WHERE
                 users.nation = $1
             GROUP BY
-                users.id, users.nation;",
+                users.id, users.username;",
         )
-        .bind(nation)
+        .bind(username)
         .map(map_user)
         .fetch_one(&self.pool)
         .await
@@ -153,7 +153,7 @@ impl AppState {
 
 fn map_user(row: PgRow) -> User {
     User {
-        nation: row.get("nation"),
+        nation: row.get("username"),
         password_hash: row.get("password_hash"),
         claims: row.get("permissions"),
     }
