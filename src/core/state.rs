@@ -113,7 +113,7 @@ impl AppState {
             JOIN
                 permissions ON user_permissions.permission_id = permissions.id
             WHERE
-                users.nation = $1
+                users.username = $1
             GROUP BY
                 users.id, users.username;",
         )
@@ -133,7 +133,7 @@ impl AppState {
         nation: &str,
         password_hash: &str,
     ) -> Result<(), Error> {
-        if let Err(e) = sqlx::query("INSERT INTO users (nation, password_hash) VALUES ($1, $2);")
+        if let Err(e) = sqlx::query("INSERT INTO users (username, password_hash) VALUES ($1, $2);")
             .bind(nation)
             .bind(password_hash)
             .execute(&self.pool)
