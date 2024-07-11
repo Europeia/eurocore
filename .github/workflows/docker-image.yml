@@ -1,0 +1,28 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+
+  build_and_push:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build the Docker image
+      run: docker build . --file Dockerfile --tag eurocore:latest
+    - name: Install doct
+      uses: digitalocean/action-doctl@v2
+      with: 
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+    - name: Log in to DO Container Registry 
+      run: doctl registry login --expiry-seconds 600
+    - name: Tag image 
+      run:
+        docker tag eurocore:latest \
+        registry.digitalocean.com/nsupc/eurocore:${{github.event.inputs.version }}
+    - name: Push image Container Registry 
+      run: docker push registry.digitalocean.com/nsupc/eurocore:${{ github.event.inputs.version }}
