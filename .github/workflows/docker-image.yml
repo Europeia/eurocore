@@ -22,7 +22,6 @@ jobs:
       run: doctl registry login --expiry-seconds 600
     - name: Tag image 
       run:
-        docker tag eurocore:latest \
-        registry.digitalocean.com/nsupc/eurocore:latest
+        docker tag eurocore:latest registry.digitalocean.com/nsupc/eurocore:latest
     - name: Push image Container Registry 
       run: docker push registry.digitalocean.com/nsupc/eurocore:latest
