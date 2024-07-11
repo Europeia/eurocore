@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub(crate) struct LoginData {
-    pub(crate) nation: String,
+    pub(crate) username: String,
     pub(crate) password: String,
 }
 
@@ -16,7 +16,7 @@ pub(crate) async fn sign_in(
     State(state): State<AppState>,
     Json(user_data): Json<LoginData>,
 ) -> Result<Json<String>, Error> {
-    let user = match state.retrieve_user_by_nation(&user_data.nation).await {
+    let user = match state.retrieve_user_by_nation(&user_data.username).await {
         Ok(resp) => match resp {
             Some(user) => user,
             None => return Err(Error::Unauthorized),
@@ -41,10 +41,10 @@ pub(crate) async fn register(
     let password_hash = bcrypt::hash(&user_data.password, 12).map_err(Error::Bcrypt)?;
 
     state
-        .register_user(&user_data.nation, &password_hash)
+        .register_user(&user_data.username, &password_hash)
         .await?;
 
-    let token = encode_jwt(user_data.nation, &state.secret)?;
+    let token = encode_jwt(user_data.username, &state.secret)?;
 
     Ok(Json(token))
 }
