@@ -48,6 +48,7 @@ pub async fn run() -> Result<(), Error> {
         config.ns_nation,
         config.ns_password,
         config.secret,
+        config.telegram_client_key,
     )
     .await?;
 
@@ -77,6 +78,21 @@ pub async fn run() -> Result<(), Error> {
         .route(
             "/dispatch",
             delete(routes::dispatch::remove_dispatch).layer(middleware::from_fn_with_state(
+                state.clone(),
+                utils::auth::authorize,
+            )),
+        )
+        .route("/telegram", get(routes::telegram::list_telegrams))
+        .route(
+            "/telegram",
+            post(routes::telegram::queue_telegram).layer(middleware::from_fn_with_state(
+                state.clone(),
+                utils::auth::authorize,
+            )),
+        )
+        .route(
+            "/telegram",
+            delete(routes::telegram::delete_telegram).layer(middleware::from_fn_with_state(
                 state.clone(),
                 utils::auth::authorize,
             )),

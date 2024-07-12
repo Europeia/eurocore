@@ -13,4 +13,5 @@ pub(crate) struct Args {
     pub(crate) ns_nation: String,
     pub(crate) ns_password: String,
     pub(crate) secret: String,
+    pub(crate) telegram_client_key: String,
 }

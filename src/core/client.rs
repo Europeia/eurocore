@@ -1,12 +1,13 @@
 use quick_xml::de::from_str;
 use regex::Regex;
 use serde::Deserialize;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tracing::instrument;
 
 use crate::core::error::{ConfigError, Error};
-use crate::types::ns::Dispatch;
+use crate::types::ns::{Dispatch, Telegram};
 use crate::utils::ratelimiter::Ratelimiter;
 
 #[derive(Clone, Debug)]
@@ -19,10 +20,17 @@ pub(crate) struct Client {
     password: String,
     pin: Arc<RwLock<Option<String>>>,
     dispatch_id_re: Regex,
+    pub(crate) telegram_client_key: String,
+    telegram_queue: Arc<RwLock<VecDeque<Telegram>>>,
 }
 
 impl Client {
-    pub(crate) fn new(user: &str, nation: String, password: String) -> Result<Self, ConfigError> {
+    pub(crate) fn new(
+        user: &str,
+        nation: String,
+        password: String,
+        telegram_client_key: String,
+    ) -> Result<Self, ConfigError> {
         let client = reqwest::ClientBuilder::new()
             .user_agent(user)
             .build()
@@ -41,6 +49,8 @@ impl Client {
             password,
             pin: Arc::new(RwLock::new(None)),
             dispatch_id_re,
+            telegram_client_key,
+            telegram_queue: Arc::new(RwLock::new(VecDeque::new())),
         })
     }
 
@@ -137,6 +147,26 @@ impl Client {
             Ok(_) => Ok(()),
             Err(e) => Err(e),
         };
+    }
+
+    pub(crate) async fn list_telegrams(&self) -> Result<String, Error> {
+        let queue = self.telegram_queue.read().await;
+        serde_json::to_string(&*queue).map_err(Error::Serialize)
+    }
+
+    pub(crate) async fn queue_telegram(&self, telegram: Telegram) {
+        let mut queue = self.telegram_queue.write().await;
+        queue.push_back(telegram);
+    }
+
+    pub(crate) async fn pop_telegram(&self) -> Option<Telegram> {
+        let mut queue = self.telegram_queue.write().await;
+        queue.pop_front()
+    }
+
+    pub(crate) async fn delete_telegram(&self, telegram: Telegram) {
+        let mut queue = self.telegram_queue.write().await;
+        queue.retain(|t| t != &telegram);
     }
 }
 

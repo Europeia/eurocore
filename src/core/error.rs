@@ -31,6 +31,7 @@ pub enum Error {
     Unauthorized,
     UserAlreadyExists,
     Bcrypt(bcrypt::BcryptError),
+    Serialize(serde_json::Error),
 }
 
 impl std::fmt::Debug for Error {
@@ -84,6 +85,9 @@ impl std::fmt::Debug for Error {
             Error::Bcrypt(e) => {
                 write!(f, "Bcrypt error: {}", e)
             }
+            Error::Serialize(e) => {
+                write!(f, "Serialization error: {}", e)
+            }
         }
     }
 }
@@ -119,6 +123,7 @@ impl IntoResponse for Error {
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
             Error::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
             Error::Bcrypt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Bcrypt error"),
+            Error::Serialize(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Serialization error"),
         };
 
         (

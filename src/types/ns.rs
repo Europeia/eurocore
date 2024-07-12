@@ -1,7 +1,6 @@
 use crate::core::error::Error;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
-use std::fmt::Display;
 
 #[derive(Clone)]
 pub(crate) enum FactbookCategory {
@@ -151,7 +150,7 @@ pub(crate) enum Command {
     Dispatch,
 }
 
-impl Display for Command {
+impl std::fmt::Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -170,7 +169,7 @@ pub(crate) enum DispatchAction {
     Remove(i32),
 }
 
-impl Display for DispatchAction {
+impl std::fmt::Display for DispatchAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -190,7 +189,7 @@ pub(crate) enum Mode {
     Execute,
 }
 
-impl Display for Mode {
+impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -337,4 +336,44 @@ pub(crate) struct EditDispatchParams {
 #[derive(Debug, Deserialize)]
 pub(crate) struct RemoveDispatchParams {
     pub(crate) id: i32,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub(crate) struct Telegram {
+    #[serde(rename = "client")]
+    client_key: String,
+    #[serde(rename = "to")]
+    recipient: String,
+    #[serde(rename = "tgid")]
+    telegram_id: String,
+    #[serde(rename = "key")]
+    secret_key: String,
+}
+
+impl std::fmt::Display for Telegram {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Telegram ID: {}, Recipient: {}",
+            self.telegram_id, self.recipient
+        )
+    }
+}
+
+impl Telegram {
+    pub(crate) fn from_params(client_key: &str, params: TelegramParams) -> Self {
+        Self {
+            client_key: client_key.to_string(),
+            recipient: params.recipient,
+            telegram_id: params.telegram_id,
+            secret_key: params.secret_key,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct TelegramParams {
+    pub(crate) recipient: String,
+    pub(crate) telegram_id: String,
+    pub(crate) secret_key: String,
 }

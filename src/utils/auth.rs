@@ -15,7 +15,7 @@ pub(crate) struct Claims {
 
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub(crate) struct User {
-    pub(crate) nation: String,
+    pub(crate) username: String,
     pub(crate) password_hash: String,
     pub(crate) claims: sqlx::types::Json<Vec<String>>,
 }

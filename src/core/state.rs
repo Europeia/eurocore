@@ -1,6 +1,6 @@
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
-use crate::types::ns::{Dispatch, EditDispatchParams, NewDispatchParams};
+use crate::types::ns::{Dispatch, EditDispatchParams, NewDispatchParams, Telegram};
 use crate::utils::auth::User;
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
 use sqlx::Row;
@@ -19,6 +19,7 @@ impl AppState {
         nation: String,
         password: String,
         secret: String,
+        telegram_client_key: String,
     ) -> Result<Self, ConfigError> {
         let pool = PgPoolOptions::new()
             .max_connections(5)
@@ -26,7 +27,7 @@ impl AppState {
             .await
             .map_err(ConfigError::DatabaseConnectionFailure)?;
 
-        let client = Client::new(user, nation, password)?;
+        let client = Client::new(user, nation, password, telegram_client_key)?;
 
         Ok(AppState {
             pool,
@@ -153,7 +154,7 @@ impl AppState {
 
 fn map_user(row: PgRow) -> User {
     User {
-        nation: row.get("username"),
+        username: row.get("username"),
         password_hash: row.get("password_hash"),
         claims: row.get("permissions"),
     }
