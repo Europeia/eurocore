@@ -15,7 +15,7 @@ pub(crate) struct Claims {
 
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub(crate) struct User {
-    pub(crate) nation: String,
+    pub(crate) username: String,
     pub(crate) password_hash: String,
     pub(crate) claims: sqlx::types::Json<Vec<String>>,
 }
@@ -42,12 +42,17 @@ pub(crate) fn encode_jwt(nation: String, secret: &str) -> Result<String, Error> 
 }
 
 pub(crate) fn decode_jwt(token: String, secret: &str) -> Result<TokenData<Claims>, Error> {
-    jsonwebtoken::decode::<Claims>(
+    return match jsonwebtoken::decode::<Claims>(
         &token,
         &DecodingKey::from_secret(secret.as_ref()),
         &Validation::default(),
-    )
-    .map_err(Error::JWTDecode)
+    ) {
+        Ok(token_data) => Ok(token_data),
+        Err(e) => match e.kind() {
+            jsonwebtoken::errors::ErrorKind::ExpiredSignature => Err(Error::ExpiredJWT),
+            _ => Err(Error::JWTDecode(e)),
+        },
+    };
 }
 
 pub(crate) async fn authorize(
@@ -61,7 +66,8 @@ pub(crate) async fn authorize(
         None => return Err(Error::NoJWT),
     };
     let mut header = auth_header.split_whitespace();
-    let (bearer, token) = (header.next(), header.next());
+    let (_bearer, token) = (header.next(), header.next());
+
     let token_data = decode_jwt(token.unwrap().to_string(), &state.secret)?;
 
     let current_user = match state
@@ -93,6 +99,12 @@ fn get_required_permission(path: &str, method: &str) -> Option<String> {
             "POST" => Some("dispatches.create".into()),
             "PUT" => Some("dispatches.edit".into()),
             "DELETE" => Some("dispatches.delete".into()),
+            _ => None,
+        },
+        "/telegram" => match method {
+            "GET" => Some("telegrams.read".into()),
+            "POST" => Some("telegrams.create".into()),
+            "DELETE" => Some("telegrams.delete".into()),
             _ => None,
         },
         _ => None,

@@ -29,7 +29,7 @@ pub(crate) async fn sign_in(
         false => return Err(Error::Unauthorized),
     }
 
-    let token = encode_jwt(user.nation, &state.secret)?;
+    let token = encode_jwt(user.username, &state.secret)?;
 
     Ok(Json(token))
 }

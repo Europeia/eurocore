@@ -8,16 +8,16 @@ use axum::{
     http::Request,
     middleware,
     routing::{delete, get, post, put},
-    Extension, Router,
+    Router,
 };
 use config::Config;
-use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::info_span;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::core::error::ConfigError as Error;
+use crate::core::telegram::telegram_loop;
 use crate::core::{config::Args, state::AppState};
 
 pub async fn run() -> Result<(), Error> {
@@ -48,6 +48,7 @@ pub async fn run() -> Result<(), Error> {
         config.ns_nation,
         config.ns_password,
         config.secret,
+        config.telegram_client_key,
     )
     .await?;
 
@@ -55,6 +56,12 @@ pub async fn run() -> Result<(), Error> {
         .run(&state.pool.clone())
         .await
         .map_err(Error::DatabaseMigration)?;
+
+    let telegram_state = state.clone();
+
+    tokio::spawn(async move {
+        telegram_loop(telegram_state).await;
+    });
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
@@ -77,6 +84,27 @@ pub async fn run() -> Result<(), Error> {
         .route(
             "/dispatch",
             delete(routes::dispatch::remove_dispatch).layer(middleware::from_fn_with_state(
+                state.clone(),
+                utils::auth::authorize,
+            )),
+        )
+        .route(
+            "/telegram",
+            get(routes::telegram::get_telegrams).layer(middleware::from_fn_with_state(
+                state.clone(),
+                utils::auth::authorize,
+            )),
+        )
+        .route(
+            "/telegram",
+            post(routes::telegram::queue_telegram).layer(middleware::from_fn_with_state(
+                state.clone(),
+                utils::auth::authorize,
+            )),
+        )
+        .route(
+            "/telegram",
+            delete(routes::telegram::delete_telegram).layer(middleware::from_fn_with_state(
                 state.clone(),
                 utils::auth::authorize,
             )),

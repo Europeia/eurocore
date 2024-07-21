@@ -6,6 +6,7 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::instrument;
 
 use crate::core::error::{ConfigError, Error};
+use crate::core::telegram::Telegrammer;
 use crate::types::ns::Dispatch;
 use crate::utils::ratelimiter::Ratelimiter;
 
@@ -13,34 +14,47 @@ use crate::utils::ratelimiter::Ratelimiter;
 pub(crate) struct Client {
     ratelimiter: Ratelimiter,
     client: Arc<Mutex<reqwest::Client>>,
-    user: String,
     url: String,
     pub(crate) nation: String,
     password: String,
     pin: Arc<RwLock<Option<String>>>,
     dispatch_id_re: Regex,
+    pub(crate) telegram_queue: Telegrammer,
 }
 
 impl Client {
-    pub(crate) fn new(user: &str, nation: String, password: String) -> Result<Self, ConfigError> {
+    pub(crate) fn new(
+        user: &str,
+        nation: String,
+        password: String,
+        telegram_client_key: String,
+    ) -> Result<Self, ConfigError> {
         let client = reqwest::ClientBuilder::new()
             .user_agent(user)
             .build()
             .map_err(ConfigError::ReqwestClientBuild)?;
 
-        let user = user.to_string();
+        let ratelimiter = Ratelimiter::new(
+            50,
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(180),
+        );
+
+        let telegram_queue = Telegrammer::new(&user, telegram_client_key, ratelimiter.clone())?;
+
         let url = "https://www.nationstates.net/cgi-bin/api.cgi".to_string();
         let dispatch_id_re = Regex::new(r#"(\d+)"#).map_err(ConfigError::Regex)?;
 
         Ok(Self {
-            ratelimiter: Ratelimiter::new(),
+            ratelimiter,
             client: Arc::new(Mutex::new(client)),
-            user,
             url,
             nation,
             password,
             pin: Arc::new(RwLock::new(None)),
             dispatch_id_re,
+            telegram_queue,
         })
     }
 
@@ -51,7 +65,7 @@ impl Client {
     }
 
     #[instrument(skip_all)]
-    async fn request(&mut self, query: String) -> Result<String, Error> {
+    pub(crate) async fn request(&mut self, query: String) -> Result<String, Error> {
         tracing::debug!("Acquiring ratelimiter");
         self.ratelimiter.acquire().await;
         tracing::debug!("Ratelimiter acquired");
