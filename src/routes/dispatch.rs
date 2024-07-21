@@ -1,18 +1,13 @@
-use axum::extract::{Json, State};
-use tracing::instrument;
 use crate::core::error::Error;
 use crate::core::state::AppState;
+use axum::extract::{Json, State};
+use tracing::instrument;
 
-use crate::types::ns::{
-    NewDispatchParams,
-    EditDispatchParams,
-    RemoveDispatchParams,
-    Dispatch,
-};
+use crate::types::ns::{Dispatch, EditDispatchParams, NewDispatchParams, RemoveDispatchParams};
 
 #[instrument(skip(state))]
 pub(crate) async fn post_dispatch(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(params): Json<NewDispatchParams>,
 ) -> Result<String, Error> {
     let dispatch_id = state.new_dispatch(params).await?;
@@ -22,7 +17,7 @@ pub(crate) async fn post_dispatch(
 
 #[instrument(skip(state))]
 pub(crate) async fn edit_dispatch(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(params): Json<EditDispatchParams>,
 ) -> Result<String, Error> {
     let dispatch_id = state.edit_dispatch(params).await?;

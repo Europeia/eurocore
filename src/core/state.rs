@@ -1,6 +1,6 @@
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
-use crate::types::ns::{Dispatch, EditDispatchParams, NewDispatchParams, Telegram};
+use crate::types::ns::{Dispatch, EditDispatchParams, NewDispatchParams};
 use crate::utils::auth::User;
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
 use sqlx::Row;

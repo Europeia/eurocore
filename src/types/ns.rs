@@ -340,31 +340,30 @@ pub(crate) struct RemoveDispatchParams {
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub(crate) struct Telegram {
+    #[serde(rename = "a")]
+    action: String,
     #[serde(rename = "client")]
     client_key: String,
-    #[serde(rename = "to")]
-    recipient: String,
     #[serde(rename = "tgid")]
-    telegram_id: String,
+    pub(crate) telegram_id: String,
     #[serde(rename = "key")]
     secret_key: String,
+    #[serde(rename = "to")]
+    pub(crate) recipient: String,
 }
 
 impl std::fmt::Display for Telegram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Telegram ID: {}, Recipient: {}",
-            self.telegram_id, self.recipient
-        )
+        write!(f, "{}:{}", self.telegram_id, self.recipient)
     }
 }
 
 impl Telegram {
     pub(crate) fn from_params(client_key: &str, params: TelegramParams) -> Self {
         Self {
+            action: "sendTG".to_string(),
             client_key: client_key.to_string(),
-            recipient: params.recipient,
+            recipient: params.recipient.to_lowercase().replace(" ", "_"),
             telegram_id: params.telegram_id,
             secret_key: params.secret_key,
         }
@@ -376,4 +375,5 @@ pub(crate) struct TelegramParams {
     pub(crate) recipient: String,
     pub(crate) telegram_id: String,
     pub(crate) secret_key: String,
+    pub(crate) recruitment: bool,
 }

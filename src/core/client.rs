@@ -1,27 +1,25 @@
 use quick_xml::de::from_str;
 use regex::Regex;
 use serde::Deserialize;
-use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tracing::instrument;
 
 use crate::core::error::{ConfigError, Error};
-use crate::types::ns::{Dispatch, Telegram};
+use crate::core::telegram::Telegrammer;
+use crate::types::ns::Dispatch;
 use crate::utils::ratelimiter::Ratelimiter;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Client {
     ratelimiter: Ratelimiter,
     client: Arc<Mutex<reqwest::Client>>,
-    user: String,
     url: String,
     pub(crate) nation: String,
     password: String,
     pin: Arc<RwLock<Option<String>>>,
     dispatch_id_re: Regex,
-    pub(crate) telegram_client_key: String,
-    telegram_queue: Arc<RwLock<VecDeque<Telegram>>>,
+    pub(crate) telegram_queue: Telegrammer,
 }
 
 impl Client {
@@ -36,21 +34,27 @@ impl Client {
             .build()
             .map_err(ConfigError::ReqwestClientBuild)?;
 
-        let user = user.to_string();
+        let ratelimiter = Ratelimiter::new(
+            50,
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(180),
+        );
+
+        let telegram_queue = Telegrammer::new(&user, telegram_client_key, ratelimiter.clone())?;
+
         let url = "https://www.nationstates.net/cgi-bin/api.cgi".to_string();
         let dispatch_id_re = Regex::new(r#"(\d+)"#).map_err(ConfigError::Regex)?;
 
         Ok(Self {
-            ratelimiter: Ratelimiter::new(),
+            ratelimiter,
             client: Arc::new(Mutex::new(client)),
-            user,
             url,
             nation,
             password,
             pin: Arc::new(RwLock::new(None)),
             dispatch_id_re,
-            telegram_client_key,
-            telegram_queue: Arc::new(RwLock::new(VecDeque::new())),
+            telegram_queue,
         })
     }
 
@@ -61,7 +65,7 @@ impl Client {
     }
 
     #[instrument(skip_all)]
-    async fn request(&mut self, query: String) -> Result<String, Error> {
+    pub(crate) async fn request(&mut self, query: String) -> Result<String, Error> {
         tracing::debug!("Acquiring ratelimiter");
         self.ratelimiter.acquire().await;
         tracing::debug!("Ratelimiter acquired");
@@ -147,26 +151,6 @@ impl Client {
             Ok(_) => Ok(()),
             Err(e) => Err(e),
         };
-    }
-
-    pub(crate) async fn list_telegrams(&self) -> Result<String, Error> {
-        let queue = self.telegram_queue.read().await;
-        serde_json::to_string(&*queue).map_err(Error::Serialize)
-    }
-
-    pub(crate) async fn queue_telegram(&self, telegram: Telegram) {
-        let mut queue = self.telegram_queue.write().await;
-        queue.push_back(telegram);
-    }
-
-    pub(crate) async fn pop_telegram(&self) -> Option<Telegram> {
-        let mut queue = self.telegram_queue.write().await;
-        queue.pop_front()
-    }
-
-    pub(crate) async fn delete_telegram(&self, telegram: Telegram) {
-        let mut queue = self.telegram_queue.write().await;
-        queue.retain(|t| t != &telegram);
     }
 }
 

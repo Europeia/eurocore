@@ -1,37 +1,38 @@
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use axum::extract::{Json, State};
+use std::collections::HashMap;
 use tracing::instrument;
 
-use crate::types::ns::{Telegram, TelegramParams};
+use crate::types::ns::TelegramParams;
 
 #[instrument(skip(state))]
-pub(crate) async fn list_telegrams(State(state): State<AppState>) -> Result<String, Error> {
-    let telegrams = state.client.list_telegrams().await?;
+pub(crate) async fn get_telegrams(
+    State(state): State<AppState>,
+) -> Result<Json<HashMap<String, Vec<String>>>, Error> {
+    let telegrams = state.client.telegram_queue.list_telegrams().await;
 
-    Ok(telegrams)
+    Ok(Json(telegrams))
 }
 
 #[instrument(skip(state))]
 pub(crate) async fn queue_telegram(
-    State(mut state): State<AppState>,
-    Json(params): Json<TelegramParams>,
+    State(state): State<AppState>,
+    Json(params): Json<Vec<TelegramParams>>,
 ) -> Result<String, Error> {
-    let telegram = Telegram::from_params(&state.client.telegram_client_key, params);
+    for param in params {
+        state.client.telegram_queue.queue_telegram(param).await;
+    }
 
-    state.client.queue_telegram(telegram).await;
-
-    Ok("Telegram queued".to_string())
+    Ok("Telegrams queued".to_string())
 }
 
 #[instrument(skip(state))]
 pub(crate) async fn delete_telegram(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(params): Json<TelegramParams>,
 ) -> Result<String, Error> {
-    let telegram = Telegram::from_params(&state.client.telegram_client_key, params);
-
-    state.client.delete_telegram(telegram).await;
+    state.client.telegram_queue.delete_telegram(params).await;
 
     Ok("Telegram deleted".to_string())
 }

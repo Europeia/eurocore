@@ -28,6 +28,7 @@ pub enum Error {
     JWTEncode(jsonwebtoken::errors::Error),
     JWTDecode(jsonwebtoken::errors::Error),
     NoJWT,
+    ExpiredJWT,
     Unauthorized,
     UserAlreadyExists,
     Bcrypt(bcrypt::BcryptError),
@@ -76,6 +77,9 @@ impl std::fmt::Debug for Error {
             Error::NoJWT => {
                 write!(f, "No JWT provided")
             }
+            Error::ExpiredJWT => {
+                write!(f, "Expired JWT")
+            }
             Error::Unauthorized => {
                 write!(f, "Unauthorized")
             }
@@ -120,6 +124,7 @@ impl IntoResponse for Error {
             Error::JWTEncode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT encode error"),
             Error::JWTDecode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT decode error"),
             Error::NoJWT => (StatusCode::UNAUTHORIZED, "No JWT provided"),
+            Error::ExpiredJWT => (StatusCode::UNAUTHORIZED, "Expired JWT"),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
             Error::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
             Error::Bcrypt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Bcrypt error"),
