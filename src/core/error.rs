@@ -4,96 +4,58 @@ use axum_macros::FromRequest;
 use serde::Serialize;
 use std::num::ParseIntError;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
-    Config(config::ConfigError),
-    DatabaseMigration(sqlx::migrate::MigrateError),
-    IO(std::io::Error),
-    DatabaseConnectionFailure(sqlx::Error),
-    ReqwestClientBuild(reqwest::Error),
-    Regex(regex::Error),
+    #[error("Config error: {0}")]
+    Config(#[from] config::ConfigError),
+    #[error("Database migration error: {0}")]
+    DatabaseMigration(#[from] sqlx::migrate::MigrateError),
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
+    #[error("SQL error: {0}")]
+    SQL(#[from] sqlx::Error),
+    #[error("Reqwest error: {0}")]
+    HTTPClient(#[from] reqwest::Error),
+    #[error("Regex error: {0}")]
+    Regex(#[from] regex::Error),
 }
 
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    HTTPClient(reqwest::Error),
-    ExternalServer(reqwest::Error),
-    URLEncode(serde_urlencoded::ser::Error),
-    HeaderDecode(reqwest::header::ToStrError),
-    Deserialize(quick_xml::DeError),
+    #[error("Reqwest error: {0}")]
+    HTTPClient(#[from] reqwest::Error),
+    #[error("URL encoding error: {0}")]
+    URLEncode(#[from] serde_urlencoded::ser::Error),
+    #[error("Header decode error: {0}")]
+    HeaderDecode(#[from] reqwest::header::ToStrError),
+    #[error("Deserialization error: {0}")]
+    Deserialize(#[from] quick_xml::DeError),
+    #[error("Invalid factbook category")]
     InvalidFactbookCategory,
-    ParseInt(ParseIntError),
-    SQL(sqlx::Error),
+    #[error("Parse int error: {0}")]
+    ParseInt(#[from] ParseIntError),
+    #[error("SQL error: {0}")]
+    SQL(#[from] sqlx::Error),
+    #[error("???")]
     Placeholder,
+    #[error("Dispatch not found")]
     DispatchNotFound,
-    JWTEncode(jsonwebtoken::errors::Error),
-    JWTDecode(jsonwebtoken::errors::Error),
-    NoJWT,
+    #[error("JWT error: {0}")]
+    JWT(#[from] jsonwebtoken::errors::Error),
+    #[error("No credentials provided")]
+    NoCredentials,
+    #[error("Expired JWT")]
     ExpiredJWT,
+    #[error("Unauthorized")]
     Unauthorized,
+    #[error("User already exists")]
     UserAlreadyExists,
-    Bcrypt(bcrypt::BcryptError),
-    Serialize(serde_json::Error),
-}
-
-impl std::fmt::Debug for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::HTTPClient(e) => {
-                write!(f, "Reqwest client internal error: {}", e)
-            }
-            Error::ExternalServer(e) => {
-                write!(f, "Server error: {}", e)
-            }
-            Error::URLEncode(e) => {
-                write!(f, "URL encoding error: {}", e)
-            }
-            Error::HeaderDecode(e) => {
-                write!(f, "Header decode error: {}", e)
-            }
-            Error::Deserialize(e) => {
-                write!(f, "Deserialization error: {}", e)
-            }
-            Error::InvalidFactbookCategory => {
-                write!(f, "Invalid factbook category")
-            }
-            Error::ParseInt(e) => {
-                write!(f, "Parse int error: {}", e)
-            }
-            Error::SQL(e) => {
-                write!(f, "SQL error: {}", e)
-            }
-            Error::Placeholder => {
-                write!(f, "No dispatch ID returned")
-            }
-            Error::DispatchNotFound => {
-                write!(f, "Dispatch not found")
-            }
-            Error::JWTEncode(e) => {
-                write!(f, "JWT encode error: {}", e)
-            }
-            Error::JWTDecode(e) => {
-                write!(f, "JWT decode error: {}", e)
-            }
-            Error::NoJWT => {
-                write!(f, "No JWT provided")
-            }
-            Error::ExpiredJWT => {
-                write!(f, "Expired JWT")
-            }
-            Error::Unauthorized => {
-                write!(f, "Unauthorized")
-            }
-            Error::UserAlreadyExists => {
-                write!(f, "User already exists")
-            }
-            Error::Bcrypt(e) => {
-                write!(f, "Bcrypt error: {}", e)
-            }
-            Error::Serialize(e) => {
-                write!(f, "Serialization error: {}", e)
-            }
-        }
-    }
+    #[error("Bcrypt error: {0}")]
+    Bcrypt(#[from] bcrypt::BcryptError),
+    #[error("Serialization error: {0}")]
+    Serialize(#[from] serde_json::Error),
+    #[error("Invalid nation")]
+    InvalidNation,
 }
 
 impl IntoResponse for Error {
@@ -106,11 +68,7 @@ impl IntoResponse for Error {
         tracing::error!("{:?}", self);
 
         let (status, message) = match self {
-            Error::HTTPClient(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Reqwest client internal error",
-            ),
-            Error::ExternalServer(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Server error"),
+            Error::HTTPClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Reqwest error"),
             Error::URLEncode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "URL encoding error"),
             Error::HeaderDecode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Header decode error"),
             Error::Deserialize(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Deserialization error"),
@@ -121,14 +79,14 @@ impl IntoResponse for Error {
             Error::SQL(_) => (StatusCode::INTERNAL_SERVER_ERROR, "SQL error"),
             Error::Placeholder => (StatusCode::INTERNAL_SERVER_ERROR, "???"),
             Error::DispatchNotFound => (StatusCode::NOT_FOUND, "Dispatch not found"),
-            Error::JWTEncode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT encode error"),
-            Error::JWTDecode(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT decode error"),
-            Error::NoJWT => (StatusCode::UNAUTHORIZED, "No JWT provided"),
+            Error::JWT(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT error"),
+            Error::NoCredentials => (StatusCode::UNAUTHORIZED, "No credentials provided"),
             Error::ExpiredJWT => (StatusCode::UNAUTHORIZED, "Expired JWT"),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
             Error::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
             Error::Bcrypt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Bcrypt error"),
             Error::Serialize(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Serialization error"),
+            Error::InvalidNation => (StatusCode::BAD_REQUEST, "Invalid nation"),
         };
 
         (

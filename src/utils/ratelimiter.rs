@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{sleep, Duration, Instant};
-use tracing;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Ratelimiter {
@@ -119,11 +118,6 @@ impl Ratelimiter {
                 sleep(self.recruitment_telegram_cooldown - elapsed).await;
             }
         }
-    }
-
-    pub(crate) async fn get_last_telegram_timestamp(&self) -> Option<Instant> {
-        let last_telegram_sent = self.last_telegram_sent.read().await;
-        *last_telegram_sent
     }
 
     pub(crate) fn telegram_cooldown(&self) -> Duration {

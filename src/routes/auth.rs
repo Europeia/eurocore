@@ -29,7 +29,7 @@ pub(crate) async fn sign_in(
         false => return Err(Error::Unauthorized),
     }
 
-    let token = encode_jwt(user.username, &state.secret)?;
+    let token = encode_jwt(user, &state.secret)?;
 
     Ok(Json(token))
 }
@@ -40,11 +40,11 @@ pub(crate) async fn register(
 ) -> Result<Json<String>, Error> {
     let password_hash = bcrypt::hash(&user_data.password, 12).map_err(Error::Bcrypt)?;
 
-    state
+    let user = state
         .register_user(&user_data.username, &password_hash)
         .await?;
 
-    let token = encode_jwt(user_data.username, &state.secret)?;
+    let token = encode_jwt(user, &state.secret)?;
 
     Ok(Json(token))
 }

@@ -16,6 +16,7 @@ use tracing::info_span;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+use crate::core::config::create_nations_map;
 use crate::core::error::ConfigError as Error;
 use crate::core::telegram::telegram_loop;
 use crate::core::{config::Args, state::AppState};
@@ -23,10 +24,9 @@ use crate::core::{config::Args, state::AppState};
 pub async fn run() -> Result<(), Error> {
     let config = Config::builder()
         .add_source(config::Environment::with_prefix("EUROCORE"))
-        .build()
-        .map_err(Error::Config)?;
+        .build()?;
 
-    let config = config.try_deserialize::<Args>().map_err(Error::Config)?;
+    let config = config.try_deserialize::<Args>()?;
 
     let database_url = format!(
         "postgresql://{}:{}@{}:{}/{}",
@@ -45,17 +45,13 @@ pub async fn run() -> Result<(), Error> {
     let state = AppState::new(
         &database_url,
         &config.user,
-        config.ns_nation,
-        config.ns_password,
+        create_nations_map(&config.nations),
         config.secret,
         config.telegram_client_key,
     )
     .await?;
 
-    sqlx::migrate!()
-        .run(&state.pool.clone())
-        .await
-        .map_err(Error::DatabaseMigration)?;
+    sqlx::migrate!().run(&state.pool.clone()).await?;
 
     let telegram_state = state.clone();
 
@@ -67,6 +63,8 @@ pub async fn run() -> Result<(), Error> {
         .route("/", get(|| async { "Hello, World!" }))
         .route("/register", post(routes::auth::register))
         .route("/login", post(routes::auth::sign_in))
+        .route("/dispatch/:id", get(routes::dispatch::get_dispatch))
+        .route("/dispatches", get(routes::dispatch::get_dispatches))
         .route(
             "/dispatch",
             post(routes::dispatch::post_dispatch).layer(middleware::from_fn_with_state(
@@ -125,13 +123,11 @@ pub async fn run() -> Result<(), Error> {
             }),
         );
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port))
-        .await
-        .map_err(Error::IO)?;
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port)).await?;
 
     tracing::debug!("listening on port {}", config.port);
 
-    axum::serve(listener, app).await.map_err(Error::IO)?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
