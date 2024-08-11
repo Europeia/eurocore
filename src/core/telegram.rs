@@ -6,7 +6,6 @@ use reqwest::Client;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Telegrammer {
@@ -27,7 +26,7 @@ impl Telegrammer {
         let client = Client::builder()
             .user_agent(user)
             .build()
-            .map_err(ConfigError::ReqwestClientBuild)?;
+            .map_err(ConfigError::HTTPClient)?;
 
         let url = "https://www.nationstates.net/cgi-bin/api.cgi".to_string();
 
@@ -92,10 +91,8 @@ impl Telegrammer {
     }
 
     async fn send(&self) -> Result<(), Error> {
-        if self.try_send_recruitment_telegram().await? {
-            return Ok(());
-        } else if self.try_send_standard_telegram().await? {
-            return Ok(());
+        if self.try_send_recruitment_telegram().await? || self.try_send_standard_telegram().await? {
+            Ok(())
         } else {
             tracing::debug!("No telegrams to send");
             Ok(())
@@ -160,13 +157,11 @@ impl Telegrammer {
             .get(format!(
                 "{}?{}",
                 &self.url,
-                serde_urlencoded::to_string(telegram).map_err(Error::URLEncode)?
+                serde_urlencoded::to_string(telegram)?
             ))
             .send()
-            .await
-            .map_err(Error::HTTPClient)?
-            .error_for_status()
-            .map_err(Error::ExternalServer)?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }

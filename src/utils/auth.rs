@@ -11,6 +11,7 @@ pub(crate) struct Claims {
     pub(crate) exp: usize,
     pub(crate) iat: usize,
     pub(crate) sub: String,
+    pub(crate) iss: String,
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -20,7 +21,7 @@ pub(crate) struct User {
     pub(crate) claims: sqlx::types::Json<Vec<String>>,
 }
 
-pub(crate) fn encode_jwt(nation: String, secret: &str) -> Result<String, Error> {
+pub(crate) fn encode_jwt(user: User, secret: &str) -> Result<String, Error> {
     let current_time = Utc::now();
     let expiration_time = current_time + Duration::days(1);
 
@@ -30,19 +31,19 @@ pub(crate) fn encode_jwt(nation: String, secret: &str) -> Result<String, Error> 
     let claims = Claims {
         exp,
         iat,
-        sub: nation,
+        sub: user.username,
+        iss: "https://api.europeia.dev".into(),
     };
 
-    jsonwebtoken::encode(
+    Ok(jsonwebtoken::encode(
         &Header::default(),
         &claims,
         &EncodingKey::from_secret(secret.as_ref()),
-    )
-    .map_err(Error::JWTEncode)
+    )?)
 }
 
 pub(crate) fn decode_jwt(token: String, secret: &str) -> Result<TokenData<Claims>, Error> {
-    return match jsonwebtoken::decode::<Claims>(
+    match jsonwebtoken::decode::<Claims>(
         &token,
         &DecodingKey::from_secret(secret.as_ref()),
         &Validation::default(),
@@ -50,9 +51,9 @@ pub(crate) fn decode_jwt(token: String, secret: &str) -> Result<TokenData<Claims
         Ok(token_data) => Ok(token_data),
         Err(e) => match e.kind() {
             jsonwebtoken::errors::ErrorKind::ExpiredSignature => Err(Error::ExpiredJWT),
-            _ => Err(Error::JWTDecode(e)),
+            _ => Err(Error::JWT(e)),
         },
-    };
+    }
 }
 
 pub(crate) async fn authorize(
@@ -60,53 +61,41 @@ pub(crate) async fn authorize(
     mut request: Request,
     next: Next,
 ) -> Result<Response<Body>, Error> {
-    let auth_header = request.headers_mut().get(http::header::AUTHORIZATION);
-    let auth_header = match auth_header {
-        Some(header) => header.to_str().map_err(Error::HeaderDecode)?,
-        None => return Err(Error::NoJWT),
-    };
-    let mut header = auth_header.split_whitespace();
-    let (_bearer, token) = (header.next(), header.next());
+    let headers = request.headers_mut();
 
-    let token_data = decode_jwt(token.unwrap().to_string(), &state.secret)?;
+    let auth_header = headers.get(http::header::AUTHORIZATION);
+    let api_key = headers.get("X-API-KEY");
 
-    let current_user = match state
-        .retrieve_user_by_username(&token_data.claims.sub)
-        .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) => return Err(Error::Unauthorized),
-        Err(e) => return Err(e),
-    };
-
-    let path = request.uri().path();
-    let method = request.method().as_str();
-
-    if let Some(permission) = get_required_permission(path, method) {
-        if !current_user.claims.contains(&permission) {
-            return Err(Error::Unauthorized);
-        }
+    if auth_header.is_none() && api_key.is_none() {
+        return Err(Error::NoCredentials);
     }
 
-    request.extensions_mut().insert(current_user);
+    let user = match auth_header {
+        Some(header) => {
+            let mut header = header.to_str()?.split_whitespace();
+            let (_bearer, token) = (header.next(), header.next());
+
+            let token_data = decode_jwt(token.unwrap_or_default().to_string(), &state.secret)?;
+
+            match state
+                .retrieve_user_by_username(&token_data.claims.sub)
+                .await?
+            {
+                Some(user) => user,
+                None => return Err(Error::Unauthorized),
+            }
+        }
+        None => {
+            let api_key = api_key.unwrap().to_str()?;
+
+            match state.retrieve_user_by_api_key(api_key).await? {
+                Some(user) => user,
+                None => return Err(Error::Unauthorized),
+            }
+        }
+    };
+
+    request.extensions_mut().insert(user);
 
     Ok(next.run(request).await)
-}
-
-fn get_required_permission(path: &str, method: &str) -> Option<String> {
-    match path {
-        "/dispatch" => match method {
-            "POST" => Some("dispatches.create".into()),
-            "PUT" => Some("dispatches.edit".into()),
-            "DELETE" => Some("dispatches.delete".into()),
-            _ => None,
-        },
-        "/telegram" => match method {
-            "GET" => Some("telegrams.read".into()),
-            "POST" => Some("telegrams.create".into()),
-            "DELETE" => Some("telegrams.delete".into()),
-            _ => None,
-        },
-        _ => None,
-    }
 }

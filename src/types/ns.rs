@@ -11,7 +11,7 @@ pub(crate) enum FactbookCategory {
 }
 
 impl FactbookCategory {
-    fn to_tuple(&self) -> (i32, i32) {
+    fn to_tuple(&self) -> (i16, i16) {
         match self {
             FactbookCategory::Factbook(subcategory) => match subcategory {
                 FactbookSubcategory::Overview => (1, 100),
@@ -51,10 +51,10 @@ impl FactbookCategory {
     }
 }
 
-impl TryFrom<(i32, i32)> for FactbookCategory {
+impl TryFrom<(i16, i16)> for FactbookCategory {
     type Error = Error;
 
-    fn try_from((category, subcategory): (i32, i32)) -> Result<Self, Self::Error> {
+    fn try_from((category, subcategory): (i16, i16)) -> Result<Self, Self::Error> {
         match category {
             1 => match subcategory {
                 100 => Ok(FactbookCategory::Factbook(FactbookSubcategory::Overview)),
@@ -206,7 +206,7 @@ impl std::fmt::Display for Mode {
 pub(crate) struct Dispatch {
     #[serde(rename = "dispatchid", skip_serializing_if = "Option::is_none")]
     pub(crate) id: Option<i32>,
-    nation: String,
+    pub(crate) nation: String,
     #[serde(rename = "c")]
     command: String,
     #[serde(rename = "dispatch")]
@@ -216,9 +216,9 @@ pub(crate) struct Dispatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) category: Option<i32>,
+    pub(crate) category: Option<i16>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) subcategory: Option<i32>,
+    pub(crate) subcategory: Option<i16>,
     mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     token: Option<String>,
@@ -269,13 +269,14 @@ impl Dispatch {
     pub(crate) fn set_token(&mut self, token: String) {
         self.token = Some(token);
     }
+}
 
-    pub(crate) fn try_from_new_params(
-        params: NewDispatchParams,
-        nation: &str,
-    ) -> Result<Self, Error> {
+impl TryFrom<NewDispatchParams> for Dispatch {
+    type Error = Error;
+
+    fn try_from(params: NewDispatchParams) -> Result<Self, Error> {
         Ok(Dispatch::new(
-            nation.to_string(),
+            params.nation,
             Command::Dispatch,
             DispatchAction::Add,
             Some(params.title),
@@ -286,13 +287,14 @@ impl Dispatch {
             ))?),
         ))
     }
+}
 
-    pub(crate) fn try_from_edit_params(
-        params: EditDispatchParams,
-        nation: &str,
-    ) -> Result<Self, Error> {
+impl TryFrom<EditDispatchParams> for Dispatch {
+    type Error = Error;
+
+    fn try_from(params: EditDispatchParams) -> Result<Self, Error> {
         Ok(Dispatch::new(
-            nation.to_string(),
+            params.nation,
             Command::Dispatch,
             DispatchAction::Edit(params.id),
             Some(params.title),
@@ -303,38 +305,45 @@ impl Dispatch {
             ))?),
         ))
     }
+}
 
-    pub(crate) fn from_remove_params(params: RemoveDispatchParams, nation: &str) -> Self {
-        Dispatch::new(
-            nation.to_string(),
+impl TryFrom<RemoveDispatchParams> for Dispatch {
+    type Error = Error;
+
+    fn try_from(params: RemoveDispatchParams) -> Result<Self, Error> {
+        Ok(Dispatch::new(
+            params.nation,
             Command::Dispatch,
             DispatchAction::Remove(params.id),
             None,
             None,
             None,
-        )
+        ))
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct NewDispatchParams {
+    pub(crate) nation: String,
     pub(crate) title: String,
     pub(crate) text: String,
-    pub(crate) category: i32,
-    pub(crate) subcategory: i32,
+    pub(crate) category: i16,
+    pub(crate) subcategory: i16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct EditDispatchParams {
+    pub(crate) nation: String,
     pub(crate) id: i32,
     pub(crate) title: String,
     pub(crate) text: String,
-    pub(crate) category: i32,
-    pub(crate) subcategory: i32,
+    pub(crate) category: i16,
+    pub(crate) subcategory: i16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct RemoveDispatchParams {
+    pub(crate) nation: String,
     pub(crate) id: i32,
 }
 
