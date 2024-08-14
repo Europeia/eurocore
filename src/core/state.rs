@@ -65,7 +65,7 @@ impl AppState {
         Ok(dispatch)
     }
 
-    pub(crate) async fn get_dispatches(self) -> Result<Vec<response::DispatchHeader>, Error> {
+    async fn get_all_dispatches(&self) -> Result<Vec<response::DispatchHeader>, Error> {
         let dispatches = sqlx::query(
             "SELECT
                 dispatches.dispatch_id,
@@ -88,6 +88,50 @@ impl AppState {
         .map(map_dispatch_header)
         .fetch_all(&self.pool)
         .await?;
+
+        Ok(dispatches)
+    }
+
+    async fn get_dispatches_by_nation(
+        &self,
+        nation: String,
+    ) -> Result<Vec<response::DispatchHeader>, Error> {
+        let dispatches = sqlx::query(
+            "SELECT
+                dispatches.dispatch_id,
+                dispatches.nation,
+                dispatch_content.category,
+                dispatch_content.subcategory,
+                dispatch_content.title,
+                dispatch_content.created_by
+            FROM dispatches
+            JOIN
+                dispatch_content ON dispatch_content.dispatch_id = dispatches.id
+            WHERE dispatch_content.id = (
+                SELECT id FROM dispatch_content
+              WHERE dispatch_content.dispatch_id = dispatches.id
+              ORDER BY dispatch_content.id DESC
+              LIMIT 1
+            )
+            AND dispatches.is_active = TRUE
+            AND dispatches.nation = $1;",
+        )
+        .bind(nation)
+        .map(map_dispatch_header)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(dispatches)
+    }
+
+    pub(crate) async fn get_dispatches(
+        self,
+        nation: Option<String>,
+    ) -> Result<Vec<response::DispatchHeader>, Error> {
+        let dispatches = match nation {
+            Some(nation) => self.get_dispatches_by_nation(nation).await?,
+            None => self.get_all_dispatches().await?,
+        };
 
         Ok(dispatches)
     }
