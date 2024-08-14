@@ -22,7 +22,17 @@ pub(crate) async fn get_dispatch(
 pub(crate) async fn get_dispatches(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<DispatchHeader>>, Error> {
-    let dispatches = state.get_dispatches().await?;
+    let dispatches = state.get_dispatches(None).await?;
+
+    Ok(Json(dispatches))
+}
+
+#[instrument(skip(state))]
+pub(crate) async fn get_dispatches_by_nation(
+    State(state): State<AppState>,
+    Path(nation): Path<String>,
+) -> Result<Json<Vec<DispatchHeader>>, Error> {
+    let dispatches = state.get_dispatches(Some(nation)).await?;
 
     Ok(Json(dispatches))
 }

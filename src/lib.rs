@@ -66,6 +66,10 @@ pub async fn run() -> Result<(), Error> {
         .route("/dispatch/:id", get(routes::dispatch::get_dispatch))
         .route("/dispatches", get(routes::dispatch::get_dispatches))
         .route(
+            "/dispatches/:nation",
+            get(routes::dispatch::get_dispatches_by_nation),
+        )
+        .route(
             "/dispatch",
             post(routes::dispatch::post_dispatch).layer(middleware::from_fn_with_state(
                 state.clone(),
