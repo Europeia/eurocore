@@ -4,7 +4,7 @@ use axum::extract::{Json, Path, State};
 use axum::Extension;
 use tracing::instrument;
 
-use crate::types::ns::{EditDispatchParams, NewDispatchParams, RemoveDispatchParams};
+use crate::ns::dispatch::{EditDispatch, NewDispatch};
 use crate::types::response::{Dispatch, DispatchHeader};
 use crate::utils::auth::User;
 
@@ -41,7 +41,7 @@ pub(crate) async fn get_dispatches_by_nation(
 pub(crate) async fn post_dispatch(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
-    Json(params): Json<NewDispatchParams>,
+    Json(params): Json<NewDispatch>,
 ) -> Result<Json<DispatchHeader>, Error> {
     if !user.claims.contains(&"dispatches.create".to_string()) {
         return Err(Error::Unauthorized);
@@ -56,13 +56,14 @@ pub(crate) async fn post_dispatch(
 pub(crate) async fn edit_dispatch(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
-    Json(params): Json<EditDispatchParams>,
+    Path(id): Path<i32>,
+    Json(params): Json<EditDispatch>,
 ) -> Result<Json<DispatchHeader>, Error> {
     if !user.claims.contains(&"dispatches.edit".to_string()) {
         return Err(Error::Unauthorized);
     }
 
-    let dispatch = state.edit_dispatch(params, &user.username).await?;
+    let dispatch = state.edit_dispatch(id, params, &user.username).await?;
 
     Ok(Json(dispatch))
 }
@@ -71,13 +72,13 @@ pub(crate) async fn edit_dispatch(
 pub(crate) async fn remove_dispatch(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
-    Json(params): Json<RemoveDispatchParams>,
+    Path(id): Path<i32>,
 ) -> Result<Json<DispatchHeader>, Error> {
     if !user.claims.contains(&"dispatches.delete".to_string()) {
         return Err(Error::Unauthorized);
     }
 
-    let dispatch = state.remove_dispatch(params).await?;
+    let dispatch = state.remove_dispatch(id).await?;
 
     Ok(Json(dispatch))
 }

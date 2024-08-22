@@ -51,7 +51,7 @@ pub(crate) fn decode_jwt(token: String, secret: &str) -> Result<TokenData<Claims
         Ok(token_data) => Ok(token_data),
         Err(e) => match e.kind() {
             jsonwebtoken::errors::ErrorKind::ExpiredSignature => Err(Error::ExpiredJWT),
-            _ => Err(Error::JWT(e)),
+            _ => Err(Error::Jwt(e)),
         },
     }
 }

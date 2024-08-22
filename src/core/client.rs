@@ -8,7 +8,7 @@ use tracing::instrument;
 
 use crate::core::error::{ConfigError, Error};
 use crate::core::telegram::Telegrammer;
-use crate::types::ns::Dispatch;
+use crate::ns::dispatch::Dispatch;
 use crate::utils::ratelimiter::Ratelimiter;
 
 #[derive(Clone, Debug)]
@@ -115,7 +115,7 @@ impl Client {
             return Err(Error::Placeholder);
         }
 
-        dispatch.set_mode(crate::types::ns::Mode::Execute);
+        dispatch.set_mode(crate::ns::dispatch::Mode::Execute);
         dispatch.set_token(response.success.unwrap());
 
         let query = serde_urlencoded::to_string(dispatch).map_err(Error::URLEncode)?;

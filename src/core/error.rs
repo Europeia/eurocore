@@ -13,7 +13,7 @@ pub enum ConfigError {
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
     #[error("SQL error: {0}")]
-    SQL(#[from] sqlx::Error),
+    Sql(#[from] sqlx::Error),
     #[error("Reqwest error: {0}")]
     HTTPClient(#[from] reqwest::Error),
     #[error("Regex error: {0}")]
@@ -35,13 +35,13 @@ pub enum Error {
     #[error("Parse int error: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("SQL error: {0}")]
-    SQL(#[from] sqlx::Error),
+    Sql(#[from] sqlx::Error),
     #[error("???")]
     Placeholder,
     #[error("Dispatch not found")]
     DispatchNotFound,
     #[error("JWT error: {0}")]
-    JWT(#[from] jsonwebtoken::errors::Error),
+    Jwt(#[from] jsonwebtoken::errors::Error),
     #[error("No credentials provided")]
     NoCredentials,
     #[error("Expired JWT")]
@@ -76,10 +76,10 @@ impl IntoResponse for Error {
                 (StatusCode::BAD_REQUEST, "Invalid factbook category")
             }
             Error::ParseInt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Parse int error"),
-            Error::SQL(_) => (StatusCode::INTERNAL_SERVER_ERROR, "SQL error"),
+            Error::Sql(_) => (StatusCode::INTERNAL_SERVER_ERROR, "SQL error"),
             Error::Placeholder => (StatusCode::INTERNAL_SERVER_ERROR, "???"),
             Error::DispatchNotFound => (StatusCode::NOT_FOUND, "Dispatch not found"),
-            Error::JWT(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT error"),
+            Error::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT error"),
             Error::NoCredentials => (StatusCode::UNAUTHORIZED, "No credentials provided"),
             Error::ExpiredJWT => (StatusCode::UNAUTHORIZED, "Expired JWT"),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
