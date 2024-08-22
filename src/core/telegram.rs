@@ -1,6 +1,6 @@
 use crate::core::error::{ConfigError, Error};
 use crate::core::state::AppState;
-use crate::types::ns::{Telegram, TelegramParams};
+use crate::ns::telegram::{Telegram, TelegramParams};
 use crate::utils::ratelimiter::Ratelimiter;
 use reqwest::Client;
 use std::collections::{HashMap, VecDeque};

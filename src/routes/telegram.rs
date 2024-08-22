@@ -5,7 +5,7 @@ use axum::Extension;
 use std::collections::HashMap;
 use tracing::instrument;
 
-use crate::types::ns::TelegramParams;
+use crate::ns::telegram::TelegramParams;
 use crate::utils::auth::User;
 
 #[instrument(skip(state, user))]

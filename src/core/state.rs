@@ -1,6 +1,6 @@
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
-use crate::types::ns::{Dispatch, EditDispatchParams, NewDispatchParams, RemoveDispatchParams};
+use crate::ns::dispatch::{Action, EditDispatch, NewDispatch};
 use crate::types::response;
 use crate::utils::auth::User;
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
@@ -36,6 +36,23 @@ impl AppState {
         })
     }
 
+    async fn get_dispatch_nation(&self, dispatch_id: i32) -> Result<String, Error> {
+        let nation: String = match sqlx::query(
+            "SELECT nation FROM dispatches WHERE dispatch_id = $1 AND is_active = TRUE;",
+        )
+        .bind(dispatch_id)
+        .map(|row: PgRow| row.get("nation"))
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(nation) => nation,
+            Err(sqlx::Error::RowNotFound) => return Err(Error::DispatchNotFound),
+            Err(e) => return Err(Error::Sql(e)),
+        };
+
+        Ok(nation)
+    }
+
     pub(crate) async fn get_dispatch(self, dispatch_id: i32) -> Result<response::Dispatch, Error> {
         let dispatch = match sqlx::query(
             "SELECT
@@ -59,7 +76,7 @@ impl AppState {
         {
             Ok(dispatch) => dispatch,
             Err(sqlx::Error::RowNotFound) => return Err(Error::DispatchNotFound),
-            Err(e) => return Err(Error::SQL(e)),
+            Err(e) => return Err(Error::Sql(e)),
         };
 
         Ok(dispatch)
@@ -138,22 +155,22 @@ impl AppState {
 
     pub(crate) async fn new_dispatch(
         mut self,
-        params: NewDispatchParams,
+        params: NewDispatch,
         created_by: &str,
     ) -> Result<response::DispatchHeader, Error> {
         if !self.client.nations.contains_key(&params.nation) {
             return Err(Error::InvalidNation);
         }
 
-        let dispatch = Dispatch::try_from(params.clone())?;
+        let dispatch = Action::add(params.clone())?;
 
-        let dispatch_id = self.client.new_dispatch(dispatch.clone()).await?;
+        let dispatch_id = self.client.new_dispatch(dispatch.into()).await?;
 
         let id: i32 = sqlx::query(
             "INSERT INTO dispatches (dispatch_id, nation) VALUES ($1, $2) RETURNING id;",
         )
         .bind(dispatch_id)
-        .bind(dispatch.nation)
+        .bind(&params.nation)
         .map(|row: PgRow| row.get(0))
         .fetch_one(&self.pool)
         .await?;
@@ -162,10 +179,10 @@ impl AppState {
             "INSERT INTO dispatch_content (dispatch_id, category, subcategory, title, text, created_by) VALUES ($1, $2, $3, $4, $5, $6);"
         )
             .bind(id)
-            .bind(dispatch.category)
-            .bind(dispatch.subcategory)
-            .bind(dispatch.title)
-            .bind(dispatch.text)
+            .bind(params.category)
+            .bind(params.subcategory)
+            .bind(params.title)
+            .bind(params.text)
             .bind(created_by)
             .execute(&self.pool)
             .await?;
@@ -173,10 +190,6 @@ impl AppState {
         let dispatch_header = response::DispatchHeader {
             id: dispatch_id,
             nation: params.nation,
-            category: Some(params.category),
-            subcategory: Some(params.subcategory),
-            title: Some(params.title),
-            created_by: Some(created_by.to_string()),
         };
 
         Ok(dispatch_header)
@@ -184,56 +197,42 @@ impl AppState {
 
     pub(crate) async fn edit_dispatch(
         mut self,
-        params: EditDispatchParams,
+        id: i32,
+        params: EditDispatch,
         created_by: &str,
     ) -> Result<response::DispatchHeader, Error> {
-        if !self.client.nations.contains_key(&params.nation) {
-            return Err(Error::InvalidNation);
-        }
+        let nation = self.get_dispatch_nation(id).await?;
 
-        let dispatch = Dispatch::try_from(params.clone())?;
+        let dispatch = Action::edit(id, nation.clone(), params.clone())?;
 
-        let dispatch_id = self.get_dispatch_id(&dispatch).await?;
-
-        self.client.new_dispatch(dispatch.clone()).await?;
+        self.client.new_dispatch(dispatch.into()).await?;
 
         sqlx::query(
             "INSERT INTO dispatch_content (dispatch_id, category, subcategory, title, text, created_by) VALUES ((SELECT id FROM dispatches WHERE dispatch_id = $1), $2, $3, $4, $5, $6);",
         )
-            .bind(dispatch_id)
-            .bind(dispatch.category)
-            .bind(dispatch.subcategory)
-            .bind(dispatch.title)
-            .bind(dispatch.text)
+            .bind(id)
+            .bind(params.category)
+            .bind(params.subcategory)
+            .bind(params.title)
+            .bind(params.text)
             .bind(created_by)
             .execute(&self.pool)
             .await?;
 
-        let dispatch_header = response::DispatchHeader {
-            id: dispatch_id,
-            nation: params.nation,
-            category: Some(params.category),
-            subcategory: Some(params.subcategory),
-            title: Some(params.title),
-            created_by: Some(created_by.to_string()),
-        };
+        let dispatch_header = response::DispatchHeader { id, nation };
 
         Ok(dispatch_header)
     }
 
     pub(crate) async fn remove_dispatch(
         mut self,
-        params: RemoveDispatchParams,
+        dispatch_id: i32,
     ) -> Result<response::DispatchHeader, Error> {
-        if !self.client.nations.contains_key(&params.nation) {
-            return Err(Error::InvalidNation);
-        }
+        let nation = self.get_dispatch_nation(dispatch_id).await?;
 
-        let dispatch = Dispatch::try_from(params.clone())?;
+        let dispatch = Action::remove(dispatch_id, nation.clone());
 
-        let dispatch_id = self.get_dispatch_id(&dispatch).await?;
-
-        self.client.delete_dispatch(dispatch.clone()).await?;
+        self.client.delete_dispatch(dispatch.into()).await?;
 
         sqlx::query("UPDATE dispatches SET is_active = FALSE WHERE dispatch_id = $1;")
             .bind(dispatch_id)
@@ -242,28 +241,10 @@ impl AppState {
 
         let dispatch_header = response::DispatchHeader {
             id: dispatch_id,
-            nation: params.nation,
-            ..Default::default()
+            nation,
         };
 
         Ok(dispatch_header)
-    }
-
-    async fn get_dispatch_id(&self, dispatch: &Dispatch) -> Result<i32, Error> {
-        Ok(
-            match sqlx::query(
-                "SELECT dispatch_id FROM dispatches WhERE is_active = true AND dispatch_id = $1;",
-            )
-            .bind(dispatch.id.unwrap())
-            .map(|row: PgRow| row.get("dispatch_id"))
-            .fetch_one(&self.pool)
-            .await
-            {
-                Ok(id) => id,
-                Err(sqlx::Error::RowNotFound) => return Err(Error::DispatchNotFound),
-                Err(e) => return Err(Error::SQL(e)),
-            },
-        )
     }
 
     pub(crate) async fn register_user(
@@ -281,7 +262,7 @@ impl AppState {
                 sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
                     Err(Error::UserAlreadyExists)
                 }
-                _ => Err(Error::SQL(e)),
+                _ => Err(Error::Sql(e)),
             };
         }
 
@@ -319,7 +300,7 @@ impl AppState {
         {
             Ok(user) => Ok(Some(user)),
             Err(sqlx::Error::RowNotFound) => Ok(None),
-            Err(e) => Err(Error::SQL(e)),
+            Err(e) => Err(Error::Sql(e)),
         }
     }
 
@@ -352,7 +333,7 @@ impl AppState {
         {
             Ok(user) => Ok(Some(user)),
             Err(sqlx::Error::RowNotFound) => Ok(None),
-            Err(e) => Err(Error::SQL(e)),
+            Err(e) => Err(Error::Sql(e)),
         }
     }
 }
@@ -369,10 +350,6 @@ fn map_dispatch_header(row: PgRow) -> response::DispatchHeader {
     response::DispatchHeader {
         id: row.get("dispatch_id"),
         nation: row.get("nation"),
-        category: row.get("category"),
-        subcategory: row.get("subcategory"),
-        title: row.get("title"),
-        created_by: row.get("created_by"),
     }
 }
 
