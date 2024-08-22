@@ -1,4 +1,5 @@
 pub(crate) mod core;
+pub(crate) mod ns;
 pub(crate) mod routes;
 pub(crate) mod types;
 pub(crate) mod utils;
@@ -77,14 +78,14 @@ pub async fn run() -> Result<(), Error> {
             )),
         )
         .route(
-            "/dispatch",
+            "/dispatch/:id",
             put(routes::dispatch::edit_dispatch).layer(middleware::from_fn_with_state(
                 state.clone(),
                 utils::auth::authorize,
             )),
         )
         .route(
-            "/dispatch",
+            "/dispatch/:id",
             delete(routes::dispatch::remove_dispatch).layer(middleware::from_fn_with_state(
                 state.clone(),
                 utils::auth::authorize,
