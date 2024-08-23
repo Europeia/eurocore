@@ -1,6 +1,6 @@
 use crate::core::error::{ConfigError, Error};
 use crate::core::state::AppState;
-use crate::ns::telegram::{Telegram, TelegramHeader, TelegramParams};
+use crate::ns::telegram::{Telegram, TelegramHeader, TelegramParams, TelegramType};
 use crate::types::response;
 use crate::utils::ratelimiter::Ratelimiter;
 use reqwest::Client;
@@ -42,14 +42,15 @@ impl Telegrammer {
     }
 
     pub(crate) async fn queue_telegram(&self, params: TelegramParams) {
-        let recruitment = params.recruitment;
-
-        let telegram = Telegram::from_params(&self.client_key, params);
-
-        if recruitment {
-            self.recruitment_queue.write().await.push_back(telegram);
-        } else {
-            self.standard_queue.write().await.push_back(telegram);
+        match params.telegram_type {
+            TelegramType::Recruitment => {
+                let telegram = Telegram::from_params(&self.client_key, params);
+                self.recruitment_queue.write().await.push_back(telegram);
+            }
+            TelegramType::Standard => {
+                let telegram = Telegram::from_params(&self.client_key, params);
+                self.standard_queue.write().await.push_back(telegram);
+            }
         }
     }
 
