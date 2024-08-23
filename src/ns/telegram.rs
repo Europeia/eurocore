@@ -20,12 +20,6 @@ impl std::fmt::Display for Telegram {
     }
 }
 
-impl PartialEq for Telegram {
-    fn eq(&self, other: &Self) -> bool {
-        self.telegram_id == other.telegram_id && self.recipient == other.recipient
-    }
-}
-
 impl Telegram {
     pub(crate) fn from_params(client_key: &str, params: TelegramParams) -> Self {
         Self {
@@ -44,4 +38,10 @@ pub(crate) struct TelegramParams {
     pub(crate) telegram_id: String,
     pub(crate) secret_key: String,
     pub(crate) recruitment: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct TelegramHeader {
+    pub(crate) recipient: String,
+    pub(crate) telegram_id: String,
 }

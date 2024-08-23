@@ -1,18 +1,19 @@
-use crate::core::error::Error;
-use crate::core::state::AppState;
 use axum::extract::{Json, State};
 use axum::Extension;
 use std::collections::HashMap;
 use tracing::instrument;
 
-use crate::ns::telegram::TelegramParams;
+use crate::core::error::Error;
+use crate::core::state::AppState;
+use crate::ns::telegram::{TelegramHeader, TelegramParams};
+use crate::types::response;
 use crate::utils::auth::User;
 
 #[instrument(skip(state, user))]
 pub(crate) async fn get_telegrams(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
-) -> Result<Json<HashMap<String, Vec<String>>>, Error> {
+) -> Result<Json<HashMap<String, Vec<response::Telegram>>>, Error> {
     if !user.claims.contains(&"telegrams.read".to_string()) {
         return Err(Error::Unauthorized);
     }
@@ -43,7 +44,7 @@ pub(crate) async fn queue_telegram(
 pub(crate) async fn delete_telegram(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
-    Json(params): Json<TelegramParams>,
+    Json(params): Json<TelegramHeader>,
 ) -> Result<String, Error> {
     if !user.claims.contains(&"telegrams.delete".to_string()) {
         return Err(Error::Unauthorized);
