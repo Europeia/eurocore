@@ -105,7 +105,7 @@ impl Client {
             .to_string();
 
         if let Some(text) = dispatch.text.as_mut() {
-            *text = convert_to_latin_charset(text.to_string());
+            *text = convert_to_latin_charset(text);
         }
 
         let query = serde_urlencoded::to_string(dispatch.clone())?;
@@ -169,7 +169,7 @@ impl Response {
     }
 }
 
-fn convert_to_latin_charset(input: String) -> String {
+fn convert_to_latin_charset(input: &str) -> String {
     input
         .replace("’", "'")
         .replace("“", "\"")
