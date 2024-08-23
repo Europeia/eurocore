@@ -104,6 +104,10 @@ impl Client {
             .ok_or(Error::InvalidNation)?
             .to_string();
 
+        if let Some(text) = dispatch.text.as_mut() {
+            *text = convert_to_latin_charset(text.to_string());
+        }
+
         let query = serde_urlencoded::to_string(dispatch.clone())?;
 
         tracing::debug!("Executing prepare request");
@@ -163,4 +167,14 @@ impl Response {
     fn is_ok(&self) -> bool {
         self.success.is_some()
     }
+}
+
+fn convert_to_latin_charset(input: String) -> String {
+    input
+        .replace("’", "'")
+        .replace("“", "\"")
+        .replace("”", "\"")
+        .replace("—", "-")
+        .replace("…", "...")
+        .replace("‘", "'")
 }
