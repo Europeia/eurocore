@@ -175,6 +175,7 @@ fn convert_to_latin_charset(input: &str) -> String {
         .replace("“", "\"")
         .replace("”", "\"")
         .replace("—", "-")
+        .replace("–", "-")
         .replace("…", "...")
         .replace("‘", "'")
 }
