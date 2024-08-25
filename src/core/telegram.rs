@@ -1,6 +1,7 @@
 use crate::core::error::{ConfigError, Error};
 use crate::core::state::AppState;
-use crate::ns::telegram::{Telegram, TelegramParams};
+use crate::ns::telegram::{Telegram, TelegramHeader, TelegramParams, TelegramType};
+use crate::types::response;
 use crate::utils::ratelimiter::Ratelimiter;
 use reqwest::Client;
 use std::collections::{HashMap, VecDeque};
@@ -41,51 +42,54 @@ impl Telegrammer {
     }
 
     pub(crate) async fn queue_telegram(&self, params: TelegramParams) {
-        let recruitment = params.recruitment;
-
-        let telegram = Telegram::from_params(&self.client_key, params);
-
-        if recruitment {
-            self.recruitment_queue.write().await.push_back(telegram);
-        } else {
-            self.standard_queue.write().await.push_back(telegram);
+        match params.telegram_type {
+            TelegramType::Recruitment => {
+                let telegram = Telegram::from_params(&self.client_key, params);
+                self.recruitment_queue.write().await.push_back(telegram);
+            }
+            TelegramType::Standard => {
+                let telegram = Telegram::from_params(&self.client_key, params);
+                self.standard_queue.write().await.push_back(telegram);
+            }
         }
     }
 
-    pub(crate) async fn delete_telegram(&self, params: TelegramParams) {
-        let recruitment = params.recruitment;
+    pub(crate) async fn delete_telegram(&self, header: TelegramHeader) {
+        let mut recruitment_queue = self.recruitment_queue.write().await;
 
-        let telegram = Telegram::from_params(&self.client_key, params);
+        recruitment_queue.retain(|tg| {
+            !(tg.recipient == header.recipient && tg.telegram_id == header.telegram_id)
+        });
 
-        if recruitment {
-            let mut queue = self.recruitment_queue.write().await;
-            queue.retain(|tg| tg != &telegram);
-        } else {
-            let mut queue = self.standard_queue.write().await;
-            queue.retain(|tg| tg != &telegram);
-        }
+        let mut standard_queue = self.standard_queue.write().await;
+
+        standard_queue.retain(|tg| {
+            !(tg.recipient == header.recipient && tg.telegram_id == header.telegram_id)
+        });
     }
 
-    pub(crate) async fn list_telegrams(&self) -> HashMap<String, Vec<String>> {
-        let mut telegrams = HashMap::new();
+    pub(crate) async fn list_telegrams(&self) -> HashMap<String, Vec<response::Telegram>> {
+        let mut telegrams: HashMap<String, Vec<response::Telegram>> = HashMap::new();
 
-        let recruitment_queue = self.recruitment_queue.read().await;
-        let standard_queue = self.standard_queue.read().await;
+        let recruitment: Vec<response::Telegram> = self
+            .recruitment_queue
+            .read()
+            .await
+            .iter()
+            .map(|tg| response::Telegram::new(&tg.recipient, &tg.telegram_id))
+            .collect();
 
-        telegrams.insert(
-            "recruitment".to_string(),
-            recruitment_queue
-                .iter()
-                .map(|tg| format!("{}:{}", tg.recipient, tg.telegram_id))
-                .collect(),
-        );
-        telegrams.insert(
-            "standard".to_string(),
-            standard_queue
-                .iter()
-                .map(|tg| format!("{}:{}", tg.recipient, tg.telegram_id))
-                .collect(),
-        );
+        telegrams.insert("recruitment".to_string(), recruitment);
+
+        let standard: Vec<response::Telegram> = self
+            .standard_queue
+            .read()
+            .await
+            .iter()
+            .map(|tg| response::Telegram::new(&tg.recipient, &tg.telegram_id))
+            .collect();
+
+        telegrams.insert("standard".to_string(), standard);
 
         telegrams
     }

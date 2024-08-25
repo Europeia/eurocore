@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Default, Serialize)]
+#[derive(Serialize)]
 pub(crate) struct DispatchHeader {
     pub(crate) id: i32,
     pub(crate) nation: String,
@@ -15,4 +15,19 @@ pub(crate) struct Dispatch {
     pub(crate) title: String,
     pub(crate) text: String,
     pub(crate) created_by: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct Telegram {
+    recipient: String,
+    id: String,
+}
+
+impl Telegram {
+    pub(crate) fn new(recipient: &str, telegram_id: &str) -> Self {
+        Self {
+            recipient: recipient.to_string(),
+            id: telegram_id.to_string(),
+        }
+    }
 }
