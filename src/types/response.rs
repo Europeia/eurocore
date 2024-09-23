@@ -17,7 +17,7 @@ pub(crate) struct Dispatch {
     pub(crate) created_by: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub(crate) struct Telegram {
     recipient: String,
     id: String,

@@ -1,7 +1,8 @@
 use crate::core::error::Error;
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum FactbookCategory {
     Factbook(FactbookSubcategory), // 1
     Bulletin(BulletinSubcategory), // 3
@@ -102,7 +103,7 @@ impl TryFrom<(i16, i16)> for FactbookCategory {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum FactbookSubcategory {
     Overview,      // 100
     History,       // 101
@@ -118,7 +119,7 @@ pub(crate) enum FactbookSubcategory {
     Miscellaneous, // 111
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum BulletinSubcategory {
     Policy,   // 305
     News,     // 315
@@ -126,7 +127,7 @@ pub(crate) enum BulletinSubcategory {
     Campaign, // 385
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum AccountSubcategory {
     Military,  // 505
     Trade,     // 515
@@ -138,7 +139,7 @@ pub(crate) enum AccountSubcategory {
     Other,     // 595
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum MetaSubcategory {
     Gameplay,  // 835
     Reference, // 845
@@ -179,49 +180,69 @@ pub(crate) struct EditDispatch {
     pub(crate) subcategory: i16,
 }
 
-#[derive(Clone)]
+// #[derive(Clone, Debug)]
+// pub(crate) struct RemoveDispatch {
+//     pub(crate) id: i32,
+//     pub(crate) nation: String,
+// }
+
+/// Intermediate representation of dispatch -- includes all information
+/// necessary to ensure ratelimit compliance, including some that does
+/// not need to be submitted to NS. Will be converted to the NS repr --
+/// `Dispatch` when sent to the client.
+#[derive(Clone, Debug)]
+pub(crate) struct IntermediateDispatch {
+    pub(crate) nation: String,
+    pub(crate) action: Action,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum Action {
     Add {
-        nation: String,
         title: String,
         text: String,
         category: FactbookCategory,
     },
     Edit {
         id: i32,
-        nation: String,
         title: String,
         text: String,
         category: FactbookCategory,
     },
     Remove {
         id: i32,
-        nation: String,
     },
 }
 
-impl Action {
+impl IntermediateDispatch {
     pub(crate) fn add(params: NewDispatch) -> Result<Self, Error> {
-        Ok(Action::Add {
+        Ok(Self {
             nation: params.nation,
-            title: params.title,
-            text: params.text,
-            category: FactbookCategory::try_from((params.category, params.subcategory))?,
+            action: Action::Add {
+                title: params.title,
+                text: params.text,
+                category: FactbookCategory::try_from((params.category, params.subcategory))?,
+            },
         })
     }
 
     pub(crate) fn edit(id: i32, nation: String, params: EditDispatch) -> Result<Self, Error> {
-        Ok(Action::Edit {
-            id,
+        Ok(Self {
             nation,
-            title: params.title,
-            text: params.text,
-            category: FactbookCategory::try_from((params.category, params.subcategory))?,
+            action: Action::Edit {
+                id,
+                title: params.title,
+                text: params.text,
+                category: FactbookCategory::try_from((params.category, params.subcategory))?,
+            },
         })
     }
 
-    pub(crate) fn remove(id: i32, nation: String) -> Self {
-        Action::Remove { id, nation }
+    pub(crate) fn delete(id: i32, nation: String) -> Self {
+        Self {
+            nation,
+            action: Action::Remove { id },
+        }
     }
 }
 
@@ -248,6 +269,29 @@ pub(crate) struct Dispatch {
 }
 
 impl Dispatch {
+    fn new(
+        id: Option<i32>,
+        nation: String,
+        action: String,
+        title: Option<String>,
+        text: Option<String>,
+        category: Option<i16>,
+        subcategory: Option<i16>,
+    ) -> Self {
+        Self {
+            id,
+            nation,
+            command: String::from("dispatch"),
+            action,
+            title,
+            text,
+            category,
+            subcategory,
+            mode: Mode::Prepare,
+            token: None,
+        }
+    }
+
     pub(crate) fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
     }
@@ -257,56 +301,78 @@ impl Dispatch {
     }
 }
 
-impl From<Action> for Dispatch {
-    fn from(action: Action) -> Dispatch {
-        match action {
+impl From<IntermediateDispatch> for Dispatch {
+    fn from(command: IntermediateDispatch) -> Dispatch {
+        match command.action {
             Action::Add {
-                nation,
                 title,
                 text,
                 category,
-            } => Dispatch {
-                id: None,
-                nation,
-                command: "dispatch".to_string(),
-                action: "add".to_string(),
-                title: Some(title),
-                text: Some(text),
-                category: Some(category.to_tuple().0),
-                subcategory: Some(category.to_tuple().1),
-                mode: Mode::Prepare,
-                token: None,
-            },
+            } => {
+                let (category, subcategory) = category.to_tuple();
+
+                Dispatch::new(
+                    None,
+                    command.nation,
+                    String::from("add"),
+                    Some(title),
+                    Some(text),
+                    Some(category),
+                    Some(subcategory),
+                )
+            }
             Action::Edit {
                 id,
-                nation,
                 title,
                 text,
                 category,
-            } => Dispatch {
-                id: Some(id),
-                nation,
-                command: "dispatch".to_string(),
-                action: "edit".to_string(),
-                title: Some(title),
-                text: Some(text),
-                category: Some(category.to_tuple().0),
-                subcategory: Some(category.to_tuple().1),
-                mode: Mode::Prepare,
-                token: None,
-            },
-            Action::Remove { id, nation } => Dispatch {
-                id: Some(id),
-                nation,
-                command: "dispatch".to_string(),
-                action: "remove".to_string(),
-                title: None,
-                text: None,
-                category: None,
-                subcategory: None,
-                mode: Mode::Prepare,
-                token: None,
-            },
+            } => {
+                let (category, subcategory) = category.to_tuple();
+
+                Dispatch::new(
+                    Some(id),
+                    command.nation,
+                    String::from("edit"),
+                    Some(title),
+                    Some(text),
+                    Some(category),
+                    Some(subcategory),
+                )
+            }
+            Action::Remove { id } => Dispatch::new(
+                Some(id),
+                command.nation,
+                String::from("remove"),
+                None,
+                None,
+                None,
+                None,
+            ),
         }
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct Command {
+    pub(crate) dispatch: IntermediateDispatch,
+    pub(crate) tx: oneshot::Sender<Response>,
+}
+
+impl Command {
+    pub(crate) fn new(dispatch: IntermediateDispatch, tx: oneshot::Sender<Response>) -> Self {
+        Self { dispatch, tx }
+    }
+}
+
+// #[derive(Debug)]
+// pub(crate) enum Operation {
+//     New(NewDispatch),
+//     Edit(EditDispatch),
+//     Delete(RemoveDispatch),
+// }
+
+#[derive(Debug)]
+pub(crate) enum Response {
+    Success,
+    Error(Error),
 }

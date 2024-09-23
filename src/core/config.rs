@@ -14,15 +14,3 @@ pub(crate) struct Args {
     pub(crate) secret: String,
     pub(crate) telegram_client_key: String,
 }
-
-pub(crate) fn create_nations_map(nations: &str) -> std::collections::HashMap<String, String> {
-    nations
-        .split(',')
-        .map(|nation| {
-            let mut split = nation.split(':');
-            let key = split.next().unwrap().to_string();
-            let value = split.next().unwrap().to_string();
-            (key, value)
-        })
-        .collect()
-}
