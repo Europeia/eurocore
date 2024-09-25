@@ -1,12 +1,10 @@
 use crate::core::client::Client;
-use crate::core::error::{ConfigError, Error};
-use crate::ns::dispatch; //::{self, Action, EditDispatch, NewDispatch};
-use crate::ns::nation::NationList;
+use crate::core::error::Error;
+use crate::ns::dispatch;
 use crate::ns::telegram;
 use crate::types::response;
 use crate::utils::auth::User;
-use crate::utils::ratelimiter::Ratelimiter;
-use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
+use sqlx::postgres::{PgPool, PgRow};
 use sqlx::Row;
 use tokio::sync::mpsc;
 
@@ -21,24 +19,19 @@ pub(crate) struct AppState {
 
 impl AppState {
     pub(crate) async fn new(
-        database_url: &str,
+        pool: PgPool,
         client: Client,
         secret: String,
         telegram_sender: mpsc::Sender<telegram::Command>,
         dispatch_sender: mpsc::Sender<dispatch::Command>,
-    ) -> Result<Self, ConfigError> {
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(database_url)
-            .await?;
-
-        Ok(AppState {
+    ) -> Self {
+        AppState {
             pool,
             client,
             secret,
             telegram_sender,
             dispatch_sender,
-        })
+        }
     }
 
     pub(crate) async fn get_dispatch_nation(&self, dispatch_id: i32) -> Result<String, Error> {
