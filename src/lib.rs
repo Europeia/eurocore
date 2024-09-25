@@ -13,6 +13,7 @@ use axum::{
     Router,
 };
 use config::Config;
+use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
 use tower_http::trace::TraceLayer;
 use tracing::info_span;
@@ -41,6 +42,11 @@ pub async fn run() -> Result<(), Error> {
         config.database_port,
         config.database_name
     );
+
+    let db_pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await?;
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::try_new(config.log_level).unwrap_or_default())
@@ -71,22 +77,23 @@ pub async fn run() -> Result<(), Error> {
 
     let (dispatch_sender, dispatch_receiver) = tokio::sync::mpsc::channel(8);
 
-    let mut dispatch_client = DispatchClient::new(client.clone(), dispatch_receiver)?;
+    let mut dispatch_client =
+        DispatchClient::new(db_pool.clone(), client.clone(), dispatch_receiver)?;
 
     let state = AppState::new(
-        &database_url,
+        db_pool.clone(),
         client,
         config.secret,
         telegram_sender,
         dispatch_sender,
     )
-    .await?;
+    .await;
 
     tokio::spawn(async move { telegram_client.run().await });
 
     tokio::spawn(async move { dispatch_client.run().await });
 
-    sqlx::migrate!().run(&state.pool.clone()).await?;
+    sqlx::migrate!().run(&db_pool.clone()).await?;
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
