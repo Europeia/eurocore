@@ -119,9 +119,7 @@ impl TelegramClient {
         loop {
             match self.rx.try_recv() {
                 Err(e) => match e {
-                    mpsc::error::TryRecvError::Empty => {
-                        tracing::debug!("Telegram channel empty")
-                    }
+                    mpsc::error::TryRecvError::Empty => (),
                     mpsc::error::TryRecvError::Disconnected => {
                         tracing::error!("Telegram channel disconnected");
                         break;
