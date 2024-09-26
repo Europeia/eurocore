@@ -88,6 +88,7 @@ impl AppState {
                 dispatch_content.category,
                 dispatch_content.subcategory,
                 dispatch_content.title,
+                dispatch_content.text,
                 dispatch_content.created_by
             FROM dispatches
             JOIN
@@ -118,6 +119,7 @@ impl AppState {
                 dispatch_content.category,
                 dispatch_content.subcategory,
                 dispatch_content.title,
+                dispatch_content.text,
                 dispatch_content.created_by
             FROM dispatches
             JOIN

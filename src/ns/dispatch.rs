@@ -2,7 +2,7 @@ use crate::core::error::Error;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) enum FactbookCategory {
     Factbook(FactbookSubcategory), // 1
     Bulletin(BulletinSubcategory), // 3
@@ -11,7 +11,7 @@ pub(crate) enum FactbookCategory {
 }
 
 impl FactbookCategory {
-    fn to_tuple(&self) -> (i16, i16) {
+    pub(crate) fn to_tuple(&self) -> (i16, i16) {
         match self {
             FactbookCategory::Factbook(subcategory) => match subcategory {
                 FactbookSubcategory::Overview => (1, 100),
@@ -103,7 +103,7 @@ impl TryFrom<(i16, i16)> for FactbookCategory {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) enum FactbookSubcategory {
     Overview,      // 100
     History,       // 101
@@ -119,7 +119,7 @@ pub(crate) enum FactbookSubcategory {
     Miscellaneous, // 111
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) enum BulletinSubcategory {
     Policy,   // 305
     News,     // 315
@@ -127,7 +127,7 @@ pub(crate) enum BulletinSubcategory {
     Campaign, // 385
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) enum AccountSubcategory {
     Military,  // 505
     Trade,     // 515
@@ -139,7 +139,7 @@ pub(crate) enum AccountSubcategory {
     Other,     // 595
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) enum MetaSubcategory {
     Gameplay,  // 835
     Reference, // 845
@@ -180,23 +180,19 @@ pub(crate) struct EditDispatch {
     pub(crate) subcategory: i16,
 }
 
-// #[derive(Clone, Debug)]
-// pub(crate) struct RemoveDispatch {
-//     pub(crate) id: i32,
-//     pub(crate) nation: String,
-// }
-
 /// Intermediate representation of dispatch -- includes all information
 /// necessary to ensure ratelimit compliance, including some that does
 /// not need to be submitted to NS. Will be converted to the NS repr --
 /// `Dispatch` when sent to the client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct IntermediateDispatch {
+    pub(crate) job_id: Option<i32>,
     pub(crate) nation: String,
+    pub(crate) user: String,
     pub(crate) action: Action,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) enum Action {
     Add {
         title: String,
@@ -214,10 +210,22 @@ pub(crate) enum Action {
     },
 }
 
+impl std::fmt::Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Action::Add { .. } => write!(f, "add"),
+            Action::Edit { .. } => write!(f, "edit"),
+            Action::Remove { .. } => write!(f, "remove"),
+        }
+    }
+}
+
 impl IntermediateDispatch {
-    pub(crate) fn add(params: NewDispatch) -> Result<Self, Error> {
+    pub(crate) fn add(user: String, params: NewDispatch) -> Result<Self, Error> {
         Ok(Self {
+            job_id: None,
             nation: params.nation,
+            user,
             action: Action::Add {
                 title: params.title,
                 text: params.text,
@@ -226,9 +234,16 @@ impl IntermediateDispatch {
         })
     }
 
-    pub(crate) fn edit(id: i32, nation: String, params: EditDispatch) -> Result<Self, Error> {
+    pub(crate) fn edit(
+        user: String,
+        id: i32,
+        nation: String,
+        params: EditDispatch,
+    ) -> Result<Self, Error> {
         Ok(Self {
+            job_id: None,
             nation,
+            user,
             action: Action::Edit {
                 id,
                 title: params.title,
@@ -238,9 +253,11 @@ impl IntermediateDispatch {
         })
     }
 
-    pub(crate) fn delete(id: i32, nation: String) -> Self {
+    pub(crate) fn delete(user: String, id: i32, nation: String) -> Self {
         Self {
+            job_id: None,
             nation,
+            user,
             action: Action::Remove { id },
         }
     }
@@ -364,15 +381,8 @@ impl Command {
     }
 }
 
-// #[derive(Debug)]
-// pub(crate) enum Operation {
-//     New(NewDispatch),
-//     Edit(EditDispatch),
-//     Delete(RemoveDispatch),
-// }
-
 #[derive(Debug)]
 pub(crate) enum Response {
-    Success,
+    Success(i32),
     Error(Error),
 }

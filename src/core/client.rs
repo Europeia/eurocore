@@ -1,4 +1,5 @@
 use quick_xml::de;
+use regex::Regex;
 use serde::Deserialize;
 use tracing::instrument;
 
@@ -15,6 +16,7 @@ pub(crate) struct Client {
     client: reqwest::Client,
     url: String,
     nations: NationList,
+    dispatch_id_regex: Regex,
 }
 
 impl Client {
@@ -32,6 +34,7 @@ impl Client {
             client,
             url,
             nations,
+            dispatch_id_regex: Regex::new(r#"(\d+)"#)?,
         })
     }
 
@@ -71,11 +74,36 @@ impl Client {
     }
 
     #[instrument(skip_all)]
+    async fn dispatch(
+        &mut self,
+        password: &str,
+        pin: &str,
+        body: String,
+    ) -> Result<reqwest::Response, Error> {
+        Ok(self
+            .client
+            .post(&self.url)
+            .header("X-Password", password)
+            .header("X-Pin", pin)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await?
+            .error_for_status()?)
+    }
+
+    #[instrument(skip_all)]
     pub(crate) async fn post_dispatch(
         &mut self,
         mut dispatch: dispatch::IntermediateDispatch,
-    ) -> Result<String, Error> {
+    ) -> Result<i32, Error> {
         let password = self.nations.get_password(&dispatch.nation).await?;
+
+        let dispatch_id = match dispatch.action {
+            Action::Add { .. } => None,
+            Action::Edit { id, .. } => Some(id),
+            Action::Remove { id, .. } => Some(id),
+        };
 
         match &mut dispatch.action {
             Action::Add { ref mut text, .. } => {
@@ -93,25 +121,19 @@ impl Client {
             Action::Remove { .. } => self.ratelimiter.acquire_for(Target::Standard).await,
         }
 
-        let mut final_dispatch = dispatch::Dispatch::from(dispatch);
+        let mut dispatch = dispatch::Dispatch::from(dispatch);
 
         let resp = self
-            .client
-            .post(&self.url)
-            .header("X-Password", &password)
-            .header("X-Pin", self.nations.get_pin(&final_dispatch.nation).await?)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(serde_urlencoded::to_string(final_dispatch.clone())?)
-            .send()
-            .await?
-            .error_for_status()?;
+            .dispatch(
+                &password,
+                &self.nations.get_pin(&dispatch.nation).await?,
+                serde_urlencoded::to_string(dispatch.clone())?,
+            )
+            .await?;
 
         if let Some(val) = resp.headers().get("X-Pin") {
             self.nations
-                .set_pin(
-                    &final_dispatch.nation,
-                    val.to_str().map_err(Error::HeaderDecode)?,
-                )
+                .set_pin(&dispatch.nation, val.to_str().map_err(Error::HeaderDecode)?)
                 .await?;
         }
 
@@ -122,26 +144,31 @@ impl Client {
             return Err(Error::Placeholder);
         }
 
-        final_dispatch.set_mode(dispatch::Mode::Execute);
-        final_dispatch.set_token(response.success.unwrap());
+        dispatch.set_mode(dispatch::Mode::Execute);
+        dispatch.set_token(response.success.unwrap());
 
         self.ratelimiter.acquire_for(Target::Standard).await;
 
         let resp = self
-            .client
-            .post(&self.url)
-            .header("X-Password", &password)
-            .header("X-Pin", self.nations.get_pin(&final_dispatch.nation).await?)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(serde_urlencoded::to_string(final_dispatch)?)
-            .send()
-            .await?
-            .error_for_status()?;
+            .dispatch(
+                &password,
+                &self.nations.get_pin(&dispatch.nation).await?,
+                serde_urlencoded::to_string(dispatch)?,
+            )
+            .await?;
 
         let response = de::from_str::<Response>(&resp.text().await?)?;
 
         if response.is_ok() {
-            Ok(response.success.unwrap())
+            match dispatch_id {
+                Some(id) => Ok(id),
+                None => Ok(self
+                    .dispatch_id_regex
+                    .find(&response.success.unwrap())
+                    .unwrap()
+                    .as_str()
+                    .parse()?),
+            }
         } else {
             tracing::error!("Error: {:?}", response.error);
             Err(Error::Placeholder)

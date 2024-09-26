@@ -78,7 +78,7 @@ pub async fn run() -> Result<(), Error> {
     let (dispatch_sender, dispatch_receiver) = tokio::sync::mpsc::channel(8);
 
     let mut dispatch_client =
-        DispatchClient::new(db_pool.clone(), client.clone(), dispatch_receiver)?;
+        DispatchClient::new(db_pool.clone(), client.clone(), dispatch_receiver);
 
     let state = AppState::new(
         db_pool.clone(),
