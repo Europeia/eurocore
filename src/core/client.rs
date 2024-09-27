@@ -107,14 +107,14 @@ impl Client {
 
         match &mut dispatch.action {
             Action::Add { ref mut text, .. } => {
-                *text = convert_to_latin_charset(&text);
+                *text = convert_to_latin_charset(text);
 
                 self.ratelimiter
                     .acquire_for(Target::Restricted(&dispatch.nation))
                     .await
             }
             Action::Edit { ref mut text, .. } => {
-                *text = convert_to_latin_charset(&text);
+                *text = convert_to_latin_charset(text);
 
                 self.ratelimiter.acquire_for(Target::Standard).await
             }

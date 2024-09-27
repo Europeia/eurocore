@@ -1,4 +1,3 @@
-use crate::core::client::Client;
 use crate::core::error::Error;
 use crate::ns::dispatch;
 use crate::ns::telegram;
@@ -11,7 +10,6 @@ use tokio::sync::mpsc;
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) pool: PgPool,
-    pub(crate) client: Client,
     pub(crate) secret: String,
     pub(crate) telegram_sender: mpsc::Sender<telegram::Command>,
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
@@ -20,14 +18,12 @@ pub(crate) struct AppState {
 impl AppState {
     pub(crate) async fn new(
         pool: PgPool,
-        client: Client,
         secret: String,
         telegram_sender: mpsc::Sender<telegram::Command>,
         dispatch_sender: mpsc::Sender<dispatch::Command>,
     ) -> Self {
         AppState {
             pool,
-            client,
             secret,
             telegram_sender,
             dispatch_sender,

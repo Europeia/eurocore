@@ -82,7 +82,6 @@ pub async fn run() -> Result<(), Error> {
 
     let state = AppState::new(
         db_pool.clone(),
-        client,
         config.secret,
         telegram_sender,
         dispatch_sender,

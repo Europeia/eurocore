@@ -38,10 +38,7 @@ impl NationList {
     }
 
     pub(crate) async fn contains_nation(&self, name: &str) -> bool {
-        match self.0.read().await.get(name) {
-            Some(_) => true,
-            None => false,
-        }
+        self.0.read().await.get(name).is_some()
     }
 
     pub(crate) async fn get_password(&self, name: &str) -> Result<String, Error> {

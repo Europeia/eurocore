@@ -92,7 +92,7 @@ impl TelegramClient {
             if self
                 .client
                 .ratelimiter
-                .peek_ratelimit(Target::RecruitmentTelegram(&*tg.sender))
+                .peek_ratelimit(Target::RecruitmentTelegram(&tg.sender))
                 .await
                 <= PERIOD
             {
@@ -104,7 +104,7 @@ impl TelegramClient {
             if self
                 .client
                 .ratelimiter
-                .peek_ratelimit(Target::Telegram(&*tg.sender))
+                .peek_ratelimit(Target::Telegram(&tg.sender))
                 .await
                 <= PERIOD
             {
