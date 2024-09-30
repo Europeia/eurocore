@@ -39,6 +39,11 @@ impl Client {
     }
 
     #[instrument(skip_all)]
+    pub(crate) async fn contains_nation(&self, nation: &str) -> bool {
+        self.nations.contains_nation(nation).await
+    }
+
+    #[instrument(skip_all)]
     pub(crate) async fn send_telegram(&self, telegram: Telegram) -> Result<(), Error> {
         match telegram.tg_type {
             TgType::Recruitment => {
@@ -57,8 +62,7 @@ impl Client {
         let query = serde_urlencoded::to_string(telegram)?;
 
         tracing::debug!("Sending telegram");
-        let _resp = self
-            .client
+        self.client
             .get(&self.url)
             .query(&query)
             .send()
@@ -66,11 +70,6 @@ impl Client {
             .error_for_status()?;
 
         Ok(())
-    }
-
-    #[instrument(skip_all)]
-    pub(crate) async fn contains_nation(&self, nation: &str) -> bool {
-        self.nations.contains_nation(nation).await
     }
 
     #[instrument(skip_all)]
@@ -160,6 +159,11 @@ impl Client {
         let response = de::from_str::<Response>(&resp.text().await?)?;
 
         if response.is_ok() {
+            // is this a stupid way to do this? idk, maybe
+            // but also, the only instance where dispatch_id will be None is for a new dispatch
+            // in which case, the response returned from NS 100% contains the id for the new dispatch
+            // it would be so much cooler if we could always reply on the response containing the id
+            // but alas
             match dispatch_id {
                 Some(id) => Ok(id),
                 None => Ok(self

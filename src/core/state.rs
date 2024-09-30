@@ -1,11 +1,12 @@
+use sqlx::postgres::{PgPool, PgRow};
+use sqlx::Row;
+use tokio::sync::mpsc;
+
 use crate::core::error::Error;
 use crate::ns::dispatch;
 use crate::ns::telegram;
 use crate::types::response;
 use crate::utils::auth::User;
-use sqlx::postgres::{PgPool, PgRow};
-use sqlx::Row;
-use tokio::sync::mpsc;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -148,102 +149,6 @@ impl AppState {
 
         Ok(dispatches)
     }
-
-    // pub(crate) async fn new_dispatch(
-    //     mut self,
-    //     params: NewDispatch,
-    //     created_by: &str,
-    // ) -> Result<response::DispatchHeader, Error> {
-    //     if !self.client.contains_nation(&params.nation).await {
-    //         return Err(Error::InvalidNation);
-    //     }
-
-    //     let command = dispatch::Command::new(Operation::New(params), )
-
-    //     let dispatch = Action::add(params.clone())?;
-
-    //     let dispatch_id = self.client.new_dispatch(dispatch.into()).await?;
-
-    //     let id: i32 = sqlx::query(
-    //         "INSERT INTO dispatches (dispatch_id, nation) VALUES ($1, $2) RETURNING id;",
-    //     )
-    //     .bind(dispatch_id)
-    //     .bind(&params.nation)
-    //     .map(|row: PgRow| row.get(0))
-    //     .fetch_one(&self.pool)
-    //     .await?;
-
-    //     sqlx::query(
-    //         "INSERT INTO dispatch_content (dispatch_id, category, subcategory, title, text, created_by) VALUES ($1, $2, $3, $4, $5, $6);"
-    //     )
-    //         .bind(id)
-    //         .bind(params.category)
-    //         .bind(params.subcategory)
-    //         .bind(params.title)
-    //         .bind(params.text)
-    //         .bind(created_by)
-    //         .execute(&self.pool)
-    //         .await?;
-
-    //     let dispatch_header = response::DispatchHeader {
-    //         id: dispatch_id,
-    //         nation: params.nation,
-    //     };
-
-    //     Ok(dispatch_header)
-    // }
-
-    // pub(crate) async fn edit_dispatch(
-    //     mut self,
-    //     id: i32,
-    //     params: EditDispatch,
-    //     created_by: &str,
-    // ) -> Result<response::DispatchHeader, Error> {
-    //     let nation = self.get_dispatch_nation(id).await?;
-
-    //     let dispatch = Action::edit(id, nation.clone(), params.clone())?;
-
-    //     self.client.new_dispatch(dispatch.into()).await?;
-
-    //     sqlx::query(
-    //         "INSERT INTO dispatch_content (dispatch_id, category, subcategory, title, text, created_by) VALUES ((SELECT id FROM dispatches WHERE dispatch_id = $1), $2, $3, $4, $5, $6);",
-    //     )
-    //         .bind(id)
-    //         .bind(params.category)
-    //         .bind(params.subcategory)
-    //         .bind(params.title)
-    //         .bind(params.text)
-    //         .bind(created_by)
-    //         .execute(&self.pool)
-    //         .await?;
-
-    //     let dispatch_header = response::DispatchHeader { id, nation };
-
-    //     Ok(dispatch_header)
-    // }
-
-    // pub(crate) async fn remove_dispatch(
-    //     mut self,
-    //     dispatch_id: i32,
-    // ) -> Result<response::DispatchHeader, Error> {
-    //     let nation = self.get_dispatch_nation(dispatch_id).await?;
-
-    //     let dispatch = Action::remove(dispatch_id, nation.clone());
-
-    //     self.client.delete_dispatch(dispatch.into()).await?;
-
-    //     sqlx::query("UPDATE dispatches SET is_active = FALSE WHERE dispatch_id = $1;")
-    //         .bind(dispatch_id)
-    //         .execute(&self.pool)
-    //         .await?;
-
-    //     let dispatch_header = response::DispatchHeader {
-    //         id: dispatch_id,
-    //         nation,
-    //     };
-
-    //     Ok(dispatch_header)
-    // }
 
     pub(crate) async fn register_user(
         &self,

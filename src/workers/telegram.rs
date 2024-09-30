@@ -1,12 +1,12 @@
+use std::collections::{HashMap, VecDeque};
+use tokio::sync::mpsc;
+
+use crate::core::client::Client;
 use crate::core::error::ConfigError;
 use crate::ns::telegram::{Command, Header, Operation, Params, Response, Telegram, TgType};
 use crate::types::response;
 use crate::utils::ratelimiter::Target;
 use crate::workers::PERIOD;
-
-use crate::core::client::Client;
-use std::collections::{HashMap, VecDeque};
-use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub(crate) struct TelegramClient {

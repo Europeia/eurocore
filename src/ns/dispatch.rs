@@ -1,6 +1,7 @@
-use crate::core::error::Error;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
+
+use crate::core::error::Error;
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) enum FactbookCategory {

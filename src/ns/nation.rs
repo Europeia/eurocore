@@ -1,8 +1,9 @@
-use crate::core::error::Error;
 use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+use crate::core::error::Error;
 
 pub(crate) struct Nation {
     name: String,

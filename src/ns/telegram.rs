@@ -1,7 +1,8 @@
-use crate::types::response;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::oneshot;
+
+use crate::types::response;
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct Telegram {
