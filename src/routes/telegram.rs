@@ -27,12 +27,17 @@ pub(crate) async fn get_telegrams(
         .await
         .unwrap();
 
-    let telegrams = match rx.await {
-        Ok(Response::List(telegrams)) => telegrams,
-        _ => todo!(),
-    };
-
-    Ok(Json(telegrams))
+    match rx.await {
+        Ok(Response::List(telegrams)) => Ok(Json(telegrams)),
+        Ok(_) => {
+            tracing::error!("Invalid response from telegram worker");
+            Err(Error::Internal)
+        }
+        Err(e) => {
+            tracing::error!("Error listing telegrams: {}", e);
+            Err(Error::Internal)
+        }
+    }
 }
 
 #[instrument(skip(state, user))]
