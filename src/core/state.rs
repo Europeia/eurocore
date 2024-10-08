@@ -57,7 +57,8 @@ impl AppState {
                 dispatch_content.subcategory,
                 dispatch_content.title,
                 dispatch_content.text,
-                dispatch_content.created_by
+                dispatch_content.created_by,
+                timezone('utc', dispatch_content.created_at) as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -86,7 +87,8 @@ impl AppState {
                 dispatch_content.subcategory,
                 dispatch_content.title,
                 dispatch_content.text,
-                dispatch_content.created_by
+                dispatch_content.created_by,
+                timezone('utc', dispatch_content.created_at) as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -117,7 +119,8 @@ impl AppState {
                 dispatch_content.subcategory,
                 dispatch_content.title,
                 dispatch_content.text,
-                dispatch_content.created_by
+                dispatch_content.created_by,
+                timezone('utc', dispatch_content.created_at) as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -265,5 +268,6 @@ fn map_dispatch(row: PgRow) -> response::Dispatch {
         title: row.get("title"),
         text: row.get("text"),
         created_by: row.get("created_by"),
+        modified_at: row.get("created_at"),
     }
 }

@@ -15,6 +15,7 @@ pub(crate) struct Dispatch {
     pub(crate) title: String,
     pub(crate) text: String,
     pub(crate) created_by: String,
+    pub(crate) modified_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Serialize, Debug)]
