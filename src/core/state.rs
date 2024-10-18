@@ -50,6 +50,35 @@ impl AppState {
         Ok(job_id)
     }
 
+    pub(crate) async fn get_dispatch_status(
+        &self,
+        id: i32,
+    ) -> Result<response::DispatchStatus, Error> {
+        let status = match sqlx::query(
+            "SELECT
+                id,
+                type AS action,
+                status,
+                dispatch_id,
+                error,
+                timezone('utc', created_at) as created_at,
+                timezone('utc', modified_at) as modified_at
+            FROM dispatch_queue
+            WHERE id = $1;",
+        )
+        .bind(id)
+        .map(map_dispatch_status)
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(status) => status,
+            Err(sqlx::Error::RowNotFound) => return Err(Error::JobNotFound),
+            Err(e) => return Err(Error::Sql(e)),
+        };
+
+        Ok(status)
+    }
+
     pub(crate) async fn get_dispatch_nation(&self, dispatch_id: i32) -> Result<String, Error> {
         let nation: String = match sqlx::query(
             "SELECT nation FROM dispatches WHERE dispatch_id = $1 AND is_active = TRUE;",
@@ -288,5 +317,17 @@ fn map_dispatch(row: PgRow) -> response::Dispatch {
         text: row.get("text"),
         created_by: row.get("created_by"),
         modified_at: row.get("created_at"),
+    }
+}
+
+fn map_dispatch_status(row: PgRow) -> response::DispatchStatus {
+    response::DispatchStatus {
+        id: row.get("id"),
+        action: row.get("action"),
+        status: row.get("status"),
+        dispatch_id: row.get("dispatch_id"),
+        error: row.get("error"),
+        created_at: row.get("created_at"),
+        modified_at: row.get("modified_at"),
     }
 }

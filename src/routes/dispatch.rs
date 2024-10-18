@@ -9,7 +9,7 @@ use tracing::instrument;
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch, Response};
-use crate::types::response::Dispatch;
+use crate::types::response::{Dispatch, DispatchStatus};
 use crate::utils::auth::User;
 
 #[instrument(skip(state))]
@@ -137,4 +137,15 @@ pub(crate) async fn remove_dispatch(
         Ok(_) => Ok((StatusCode::ACCEPTED, Json(job_id))),
         Err(_e) => Err(Error::Internal),
     }
+}
+
+// #[debug_handler]
+#[instrument(skip(state))]
+pub(crate) async fn get_queued_dispatch(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<Json<DispatchStatus>, Error> {
+    let status = state.get_dispatch_status(id).await?;
+
+    Ok(Json(status))
 }

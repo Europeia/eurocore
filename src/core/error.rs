@@ -58,6 +58,8 @@ pub enum Error {
     InvalidNation,
     #[error("Internal server error")]
     Internal,
+    #[error("Job not found")]
+    JobNotFound,
 }
 
 impl IntoResponse for Error {
@@ -90,6 +92,7 @@ impl IntoResponse for Error {
             Error::Serialize(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Serialization error"),
             Error::InvalidNation => (StatusCode::BAD_REQUEST, "Invalid nation"),
             Error::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            Error::JobNotFound => (StatusCode::NOT_FOUND, "Job not found"),
         };
 
         (

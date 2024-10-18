@@ -126,6 +126,10 @@ pub async fn run() -> Result<(), Error> {
             )),
         )
         .route(
+            "/queue/dispatch/:id",
+            get(routes::dispatch::get_queued_dispatch),
+        )
+        .route(
             "/telegram",
             get(routes::telegram::get_telegrams).layer(middleware::from_fn_with_state(
                 state.clone(),

@@ -35,11 +35,12 @@ impl DispatchClient {
         error: Option<String>,
     ) {
         if let Err(e) = sqlx::query(
-            "UPDATE dispatch_queue SET status = $1, dispatch_id = $2, error = $3 WHERE id = $4;",
+            "UPDATE dispatch_queue SET status = $1, dispatch_id = $2, error = $3, modified_at = $4 WHERE id = $5;",
         )
         .bind(status)
         .bind(dispatch_id)
         .bind(error)
+        .bind(chrono::Utc::now())
         .bind(job_id)
         .execute(&self.pool)
         .await
@@ -99,8 +100,8 @@ impl DispatchClient {
 
             let (status, dispatch_id, error) =
                 match self.client.post_dispatch(dispatch.clone()).await {
-                    Ok(id) => ("completed", Some(id), None),
-                    Err(e) => ("failed", None, Some(e.to_string())),
+                    Ok(id) => ("success", Some(id), None),
+                    Err(e) => ("failure", None, Some(e.to_string())),
                 };
 
             self.update_job(job_id, status, dispatch_id, error).await;
