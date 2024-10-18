@@ -1,42 +1,85 @@
-use crate::core::client::Client;
-use crate::core::error::{ConfigError, Error};
-use crate::ns::dispatch::{Action, EditDispatch, NewDispatch};
+use serde::Serialize;
+use sqlx::postgres::{PgPool, PgRow};
+use sqlx::types::Json;
+use sqlx::Row;
+use tokio::sync::mpsc;
+
+use crate::core::error::Error;
+use crate::ns::dispatch;
+use crate::ns::telegram;
 use crate::types::response;
 use crate::utils::auth::User;
-use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
-use sqlx::Row;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) pool: PgPool,
-    pub(crate) client: Client,
     pub(crate) secret: String,
+    pub(crate) telegram_sender: mpsc::Sender<telegram::Command>,
+    pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
 }
 
 impl AppState {
     pub(crate) async fn new(
-        database_url: &str,
-        user: &str,
-        nations: HashMap<String, String>,
+        pool: PgPool,
         secret: String,
-        telegram_client_key: String,
-    ) -> Result<Self, ConfigError> {
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(database_url)
-            .await?;
-
-        let client = Client::new(user, nations, telegram_client_key)?;
-
-        Ok(AppState {
+        telegram_sender: mpsc::Sender<telegram::Command>,
+        dispatch_sender: mpsc::Sender<dispatch::Command>,
+    ) -> Self {
+        AppState {
             pool,
-            client,
             secret,
-        })
+            telegram_sender,
+            dispatch_sender,
+        }
     }
 
-    async fn get_dispatch_nation(&self, dispatch_id: i32) -> Result<String, Error> {
+    pub(crate) async fn queue_dispatch<T: Serialize>(
+        &self,
+        action: &str,
+        payload: Json<T>,
+    ) -> Result<i32, Error> {
+        let job_id: i32 = sqlx::query(
+            "INSERT INTO dispatch_queue (type, payload, status) VALUES ($1, $2, 'queued') RETURNING id",
+        )
+            .bind(action)
+            .bind(payload)
+            .map(|row: PgRow| row.get(0))
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(job_id)
+    }
+
+    pub(crate) async fn get_dispatch_status(
+        &self,
+        id: i32,
+    ) -> Result<response::DispatchStatus, Error> {
+        let status = match sqlx::query(
+            "SELECT
+                id,
+                type AS action,
+                status,
+                dispatch_id,
+                error,
+                timezone('utc', created_at) as created_at,
+                timezone('utc', modified_at) as modified_at
+            FROM dispatch_queue
+            WHERE id = $1;",
+        )
+        .bind(id)
+        .map(map_dispatch_status)
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(status) => status,
+            Err(sqlx::Error::RowNotFound) => return Err(Error::JobNotFound),
+            Err(e) => return Err(Error::Sql(e)),
+        };
+
+        Ok(status)
+    }
+
+    pub(crate) async fn get_dispatch_nation(&self, dispatch_id: i32) -> Result<String, Error> {
         let nation: String = match sqlx::query(
             "SELECT nation FROM dispatches WHERE dispatch_id = $1 AND is_active = TRUE;",
         )
@@ -62,7 +105,8 @@ impl AppState {
                 dispatch_content.subcategory,
                 dispatch_content.title,
                 dispatch_content.text,
-                dispatch_content.created_by
+                dispatch_content.created_by,
+                timezone('utc', dispatch_content.created_at) as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -82,7 +126,7 @@ impl AppState {
         Ok(dispatch)
     }
 
-    async fn get_all_dispatches(&self) -> Result<Vec<response::DispatchHeader>, Error> {
+    async fn get_all_dispatches(&self) -> Result<Vec<response::Dispatch>, Error> {
         let dispatches = sqlx::query(
             "SELECT
                 dispatches.dispatch_id,
@@ -90,7 +134,9 @@ impl AppState {
                 dispatch_content.category,
                 dispatch_content.subcategory,
                 dispatch_content.title,
-                dispatch_content.created_by
+                dispatch_content.text,
+                dispatch_content.created_by,
+                timezone('utc', dispatch_content.created_at) as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -102,7 +148,7 @@ impl AppState {
             )
             AND dispatches.is_active = TRUE;",
         )
-        .map(map_dispatch_header)
+        .map(map_dispatch)
         .fetch_all(&self.pool)
         .await?;
 
@@ -112,7 +158,7 @@ impl AppState {
     async fn get_dispatches_by_nation(
         &self,
         nation: String,
-    ) -> Result<Vec<response::DispatchHeader>, Error> {
+    ) -> Result<Vec<response::Dispatch>, Error> {
         let dispatches = sqlx::query(
             "SELECT
                 dispatches.dispatch_id,
@@ -120,7 +166,9 @@ impl AppState {
                 dispatch_content.category,
                 dispatch_content.subcategory,
                 dispatch_content.title,
-                dispatch_content.created_by
+                dispatch_content.text,
+                dispatch_content.created_by,
+                timezone('utc', dispatch_content.created_at) as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -134,7 +182,7 @@ impl AppState {
             AND dispatches.nation = $1;",
         )
         .bind(nation)
-        .map(map_dispatch_header)
+        .map(map_dispatch)
         .fetch_all(&self.pool)
         .await?;
 
@@ -144,107 +192,13 @@ impl AppState {
     pub(crate) async fn get_dispatches(
         self,
         nation: Option<String>,
-    ) -> Result<Vec<response::DispatchHeader>, Error> {
+    ) -> Result<Vec<response::Dispatch>, Error> {
         let dispatches = match nation {
             Some(nation) => self.get_dispatches_by_nation(nation).await?,
             None => self.get_all_dispatches().await?,
         };
 
         Ok(dispatches)
-    }
-
-    pub(crate) async fn new_dispatch(
-        mut self,
-        params: NewDispatch,
-        created_by: &str,
-    ) -> Result<response::DispatchHeader, Error> {
-        if !self.client.nations.contains_key(&params.nation) {
-            return Err(Error::InvalidNation);
-        }
-
-        let dispatch = Action::add(params.clone())?;
-
-        let dispatch_id = self.client.new_dispatch(dispatch.into()).await?;
-
-        let id: i32 = sqlx::query(
-            "INSERT INTO dispatches (dispatch_id, nation) VALUES ($1, $2) RETURNING id;",
-        )
-        .bind(dispatch_id)
-        .bind(&params.nation)
-        .map(|row: PgRow| row.get(0))
-        .fetch_one(&self.pool)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO dispatch_content (dispatch_id, category, subcategory, title, text, created_by) VALUES ($1, $2, $3, $4, $5, $6);"
-        )
-            .bind(id)
-            .bind(params.category)
-            .bind(params.subcategory)
-            .bind(params.title)
-            .bind(params.text)
-            .bind(created_by)
-            .execute(&self.pool)
-            .await?;
-
-        let dispatch_header = response::DispatchHeader {
-            id: dispatch_id,
-            nation: params.nation,
-        };
-
-        Ok(dispatch_header)
-    }
-
-    pub(crate) async fn edit_dispatch(
-        mut self,
-        id: i32,
-        params: EditDispatch,
-        created_by: &str,
-    ) -> Result<response::DispatchHeader, Error> {
-        let nation = self.get_dispatch_nation(id).await?;
-
-        let dispatch = Action::edit(id, nation.clone(), params.clone())?;
-
-        self.client.new_dispatch(dispatch.into()).await?;
-
-        sqlx::query(
-            "INSERT INTO dispatch_content (dispatch_id, category, subcategory, title, text, created_by) VALUES ((SELECT id FROM dispatches WHERE dispatch_id = $1), $2, $3, $4, $5, $6);",
-        )
-            .bind(id)
-            .bind(params.category)
-            .bind(params.subcategory)
-            .bind(params.title)
-            .bind(params.text)
-            .bind(created_by)
-            .execute(&self.pool)
-            .await?;
-
-        let dispatch_header = response::DispatchHeader { id, nation };
-
-        Ok(dispatch_header)
-    }
-
-    pub(crate) async fn remove_dispatch(
-        mut self,
-        dispatch_id: i32,
-    ) -> Result<response::DispatchHeader, Error> {
-        let nation = self.get_dispatch_nation(dispatch_id).await?;
-
-        let dispatch = Action::remove(dispatch_id, nation.clone());
-
-        self.client.delete_dispatch(dispatch.into()).await?;
-
-        sqlx::query("UPDATE dispatches SET is_active = FALSE WHERE dispatch_id = $1;")
-            .bind(dispatch_id)
-            .execute(&self.pool)
-            .await?;
-
-        let dispatch_header = response::DispatchHeader {
-            id: dispatch_id,
-            nation,
-        };
-
-        Ok(dispatch_header)
     }
 
     pub(crate) async fn register_user(
@@ -362,5 +316,18 @@ fn map_dispatch(row: PgRow) -> response::Dispatch {
         title: row.get("title"),
         text: row.get("text"),
         created_by: row.get("created_by"),
+        modified_at: row.get("created_at"),
+    }
+}
+
+fn map_dispatch_status(row: PgRow) -> response::DispatchStatus {
+    response::DispatchStatus {
+        id: row.get("id"),
+        action: row.get("action"),
+        status: row.get("status"),
+        dispatch_id: row.get("dispatch_id"),
+        error: row.get("error"),
+        created_at: row.get("created_at"),
+        modified_at: row.get("modified_at"),
     }
 }

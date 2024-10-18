@@ -1,11 +1,12 @@
 use axum::extract::{Json, State};
 use axum::Extension;
 use std::collections::HashMap;
+use tokio::sync::oneshot;
 use tracing::instrument;
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
-use crate::ns::telegram::{TelegramHeader, TelegramParams};
+use crate::ns::telegram::{Command, Header, Operation, Params, Response};
 use crate::types::response;
 use crate::utils::auth::User;
 
@@ -18,23 +19,49 @@ pub(crate) async fn get_telegrams(
         return Err(Error::Unauthorized);
     }
 
-    let telegrams = state.client.telegram_queue.list_telegrams().await;
+    let (tx, rx) = oneshot::channel();
 
-    Ok(Json(telegrams))
+    state
+        .telegram_sender
+        .send(Command::new(Operation::List, tx))
+        .await
+        .unwrap();
+
+    match rx.await {
+        Ok(Response::List(telegrams)) => Ok(Json(telegrams)),
+        Ok(_) => {
+            tracing::error!("Invalid response from telegram worker");
+            Err(Error::Internal)
+        }
+        Err(e) => {
+            tracing::error!("Error listing telegrams: {}", e);
+            Err(Error::Internal)
+        }
+    }
 }
 
 #[instrument(skip(state, user))]
 pub(crate) async fn queue_telegram(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
-    Json(params): Json<Vec<TelegramParams>>,
+    Json(params): Json<Vec<Params>>,
 ) -> Result<String, Error> {
     if !user.claims.contains(&"telegrams.create".to_string()) {
         return Err(Error::Unauthorized);
     }
 
     for param in params {
-        state.client.telegram_queue.queue_telegram(param).await;
+        let (tx, rx) = oneshot::channel();
+
+        state
+            .telegram_sender
+            .send(Command::new(Operation::Queue(param), tx))
+            .await
+            .unwrap();
+
+        if let Err(e) = rx.await {
+            tracing::error!("Error queueing telegram: {}", e);
+        }
     }
 
     Ok("Telegrams queued".to_string())
@@ -44,13 +71,23 @@ pub(crate) async fn queue_telegram(
 pub(crate) async fn delete_telegram(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
-    Json(params): Json<TelegramHeader>,
+    Json(params): Json<Header>,
 ) -> Result<String, Error> {
     if !user.claims.contains(&"telegrams.delete".to_string()) {
         return Err(Error::Unauthorized);
     }
 
-    state.client.telegram_queue.delete_telegram(params).await;
+    let (tx, rx) = oneshot::channel();
+
+    state
+        .telegram_sender
+        .send(Command::new(Operation::Delete(params), tx))
+        .await
+        .unwrap();
+
+    if let Err(e) = rx.await {
+        tracing::error!("Error deleting telegram: {}", e);
+    }
 
     Ok("Telegram deleted".to_string())
 }

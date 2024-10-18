@@ -1,10 +1,11 @@
-use crate::core::error::Error;
-use crate::core::state::AppState;
-use crate::utils::auth::encode_jwt;
 use axum::extract::State;
 use axum::Json;
 use bcrypt::verify;
 use serde::Deserialize;
+
+use crate::core::error::Error;
+use crate::core::state::AppState;
+use crate::utils::auth::encode_jwt;
 
 #[derive(Deserialize)]
 pub(crate) struct LoginData {

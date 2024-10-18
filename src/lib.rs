@@ -3,6 +3,7 @@ pub(crate) mod ns;
 pub(crate) mod routes;
 pub(crate) mod types;
 pub(crate) mod utils;
+pub(crate) mod workers;
 
 use axum::{
     extract::MatchedPath,
@@ -12,15 +13,19 @@ use axum::{
     Router,
 };
 use config::Config;
+use sqlx::postgres::PgPoolOptions;
+use std::time::Duration;
 use tower_http::trace::TraceLayer;
 use tracing::info_span;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use workers::dispatch::DispatchClient;
 
-use crate::core::config::create_nations_map;
 use crate::core::error::ConfigError as Error;
-use crate::core::telegram::telegram_loop;
-use crate::core::{config::Args, state::AppState};
+use crate::core::{client::Client, config::Args, state::AppState};
+use crate::ns::nation::{create_nations_map, NationList};
+use crate::utils::ratelimiter::Ratelimiter;
+use crate::workers::telegram::TelegramClient;
 
 pub async fn run() -> Result<(), Error> {
     let config = Config::builder()
@@ -38,27 +43,56 @@ pub async fn run() -> Result<(), Error> {
         config.database_name
     );
 
+    let db_pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await?;
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::try_new(config.log_level).unwrap_or_default())
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let state = AppState::new(
-        &database_url,
+    let ratelimiter = Ratelimiter::new(
+        50,
+        Duration::from_millis(30_050),
+        Duration::from_millis(30_050),
+        Duration::from_millis(180_050),
+        Duration::from_secs(60),
+    );
+
+    let client = Client::new(
         &config.user,
-        create_nations_map(&config.nations),
-        config.secret,
+        NationList::new(create_nations_map(&config.nations)),
+        ratelimiter,
+    )?;
+
+    let (telegram_sender, telegram_receiver) = tokio::sync::mpsc::channel(8);
+
+    let mut telegram_client = TelegramClient::new(
+        client.clone(),
         config.telegram_client_key,
+        telegram_receiver,
+    )?;
+
+    let (dispatch_sender, dispatch_receiver) = tokio::sync::mpsc::channel(8);
+
+    let mut dispatch_client =
+        DispatchClient::new(db_pool.clone(), client.clone(), dispatch_receiver);
+
+    let state = AppState::new(
+        db_pool.clone(),
+        config.secret,
+        telegram_sender,
+        dispatch_sender,
     )
-    .await?;
+    .await;
 
-    sqlx::migrate!().run(&state.pool.clone()).await?;
+    tokio::spawn(async move { telegram_client.run().await });
 
-    let telegram_state = state.clone();
+    tokio::spawn(async move { dispatch_client.run().await });
 
-    tokio::spawn(async move {
-        telegram_loop(telegram_state).await;
-    });
+    sqlx::migrate!().run(&db_pool.clone()).await?;
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
@@ -90,6 +124,10 @@ pub async fn run() -> Result<(), Error> {
                 state.clone(),
                 utils::auth::authorize,
             )),
+        )
+        .route(
+            "/queue/dispatch/:id",
+            get(routes::dispatch::get_queued_dispatch),
         )
         .route(
             "/telegram",

@@ -1,10 +1,11 @@
-use crate::core::error::Error;
-use crate::core::state::AppState;
 use axum::extract::State;
 use axum::{body::Body, extract::Request, http, http::Response, middleware::Next};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{self, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
+
+use crate::core::error::Error;
+use crate::core::state::AppState;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub(crate) struct Claims {
