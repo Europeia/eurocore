@@ -1,4 +1,6 @@
+use serde::Serialize;
 use sqlx::postgres::{PgPool, PgRow};
+use sqlx::types::Json;
 use sqlx::Row;
 use tokio::sync::mpsc;
 
@@ -29,6 +31,23 @@ impl AppState {
             telegram_sender,
             dispatch_sender,
         }
+    }
+
+    pub(crate) async fn queue_dispatch<T: Serialize>(
+        &self,
+        action: &str,
+        payload: Json<T>,
+    ) -> Result<i32, Error> {
+        let job_id: i32 = sqlx::query(
+            "INSERT INTO dispatch_queue (type, payload, status) VALUES ($1, $2, 'queued') RETURNING id",
+        )
+            .bind(action)
+            .bind(payload)
+            .map(|row: PgRow| row.get(0))
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(job_id)
     }
 
     pub(crate) async fn get_dispatch_nation(&self, dispatch_id: i32) -> Result<String, Error> {

@@ -2,6 +2,7 @@ use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 use axum::Extension;
 use axum_macros::debug_handler;
+use sqlx;
 use tokio::sync::oneshot;
 use tracing::instrument;
 
@@ -40,7 +41,7 @@ pub(crate) async fn get_dispatches_by_nation(
     Ok(Json(dispatches))
 }
 
-#[debug_handler]
+// #[debug_handler]
 #[instrument(skip(state, user))]
 pub(crate) async fn post_dispatch(
     State(state): State<AppState>,
@@ -51,7 +52,11 @@ pub(crate) async fn post_dispatch(
         return Err(Error::Unauthorized);
     }
 
-    let dispatch = IntermediateDispatch::add(user.username, params)?;
+    let job_id = state
+        .queue_dispatch("add", sqlx::types::Json(params.clone()))
+        .await?;
+
+    let dispatch = IntermediateDispatch::add(job_id, user.username, params)?;
 
     let (tx, rx) = oneshot::channel();
 
@@ -62,13 +67,12 @@ pub(crate) async fn post_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(Response::Success(id)) => Ok((StatusCode::ACCEPTED, Json(id))),
-        Ok(Response::Error(e)) => Err(e),
-        _ => todo!(),
+        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job_id))),
+        Err(_e) => Err(Error::Internal),
     }
 }
 
-#[debug_handler]
+// #[debug_handler]
 #[instrument(skip(state, user))]
 pub(crate) async fn edit_dispatch(
     State(state): State<AppState>,
@@ -82,7 +86,11 @@ pub(crate) async fn edit_dispatch(
 
     let nation = state.get_dispatch_nation(id).await?;
 
-    let dispatch = IntermediateDispatch::edit(user.username, id, nation, params)?;
+    let job_id = state
+        .queue_dispatch("edit", sqlx::types::Json(params.clone()))
+        .await?;
+
+    let dispatch = IntermediateDispatch::edit(job_id, user.username, id, nation, params)?;
 
     let (tx, rx) = oneshot::channel();
 
@@ -93,13 +101,12 @@ pub(crate) async fn edit_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(Response::Success(id)) => Ok((StatusCode::ACCEPTED, Json(id))),
-        Ok(Response::Error(e)) => Err(e),
-        _ => todo!(),
+        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job_id))),
+        Err(_e) => Err(Error::Internal),
     }
 }
 
-#[debug_handler]
+// #[debug_handler]
 #[instrument(skip(state, user))]
 pub(crate) async fn remove_dispatch(
     State(state): State<AppState>,
@@ -112,7 +119,11 @@ pub(crate) async fn remove_dispatch(
 
     let nation = state.get_dispatch_nation(id).await?;
 
-    let dispatch = IntermediateDispatch::delete(user.username, id, nation);
+    let job_id = state
+        .queue_dispatch("remove", sqlx::types::Json(id))
+        .await?;
+
+    let dispatch = IntermediateDispatch::delete(job_id, user.username, id, nation);
 
     let (tx, rx) = oneshot::channel();
 
@@ -123,8 +134,7 @@ pub(crate) async fn remove_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(Response::Success(id)) => Ok((StatusCode::ACCEPTED, Json(id))),
-        Ok(Response::Error(e)) => Err(e),
-        _ => todo!(),
+        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job_id))),
+        Err(_e) => Err(Error::Internal),
     }
 }

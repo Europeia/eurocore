@@ -164,7 +164,7 @@ impl Serialize for Mode {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct NewDispatch {
     pub(crate) nation: String,
     pub(crate) title: String,
@@ -173,7 +173,7 @@ pub(crate) struct NewDispatch {
     pub(crate) subcategory: i16,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct EditDispatch {
     pub(crate) title: String,
     pub(crate) text: String,
@@ -187,7 +187,7 @@ pub(crate) struct EditDispatch {
 /// `Dispatch` when sent to the client.
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct IntermediateDispatch {
-    pub(crate) job_id: Option<i32>,
+    pub(crate) job_id: i32,
     pub(crate) nation: String,
     pub(crate) user: String,
     pub(crate) action: Action,
@@ -222,9 +222,9 @@ impl std::fmt::Display for Action {
 }
 
 impl IntermediateDispatch {
-    pub(crate) fn add(user: String, params: NewDispatch) -> Result<Self, Error> {
+    pub(crate) fn add(job_id: i32, user: String, params: NewDispatch) -> Result<Self, Error> {
         Ok(Self {
-            job_id: None,
+            job_id,
             nation: params.nation,
             user,
             action: Action::Add {
@@ -236,13 +236,14 @@ impl IntermediateDispatch {
     }
 
     pub(crate) fn edit(
+        job_id: i32,
         user: String,
         id: i32,
         nation: String,
         params: EditDispatch,
     ) -> Result<Self, Error> {
         Ok(Self {
-            job_id: None,
+            job_id,
             nation,
             user,
             action: Action::Edit {
@@ -254,9 +255,9 @@ impl IntermediateDispatch {
         })
     }
 
-    pub(crate) fn delete(user: String, id: i32, nation: String) -> Self {
+    pub(crate) fn delete(job_id: i32, user: String, id: i32, nation: String) -> Self {
         Self {
-            job_id: None,
+            job_id,
             nation,
             user,
             action: Action::Remove { id },
@@ -384,6 +385,5 @@ impl Command {
 
 #[derive(Debug)]
 pub(crate) enum Response {
-    Success(i32),
-    Error(Error),
+    Success,
 }

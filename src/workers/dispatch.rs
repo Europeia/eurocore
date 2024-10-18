@@ -1,12 +1,9 @@
-use sqlx::postgres::{PgPool, PgRow};
-use sqlx::types::Json;
-use sqlx::Row;
+use sqlx::postgres::PgPool;
 use std::collections::VecDeque;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::core::client::Client;
-use crate::core::error::Error;
 use crate::ns::dispatch::{Action, Command, IntermediateDispatch, Response};
 use crate::utils::ratelimiter::Target;
 use crate::workers::PERIOD;
@@ -28,24 +25,6 @@ impl DispatchClient {
             rx,
             queue: VecDeque::new(),
         }
-    }
-
-    async fn queue(&mut self, mut dispatch: IntermediateDispatch) -> Result<i32, Error> {
-        let job_id: i32 = sqlx::query(
-            "INSERT INTO dispatch_queue (type, payload, status) VALUES ($1, $2, $3) RETURNING id",
-        )
-        .bind(dispatch.action.to_string())
-        .bind(Json(&dispatch))
-        .bind("queued")
-        .map(|row: PgRow| row.get(0))
-        .fetch_one(&self.pool)
-        .await?;
-
-        dispatch.job_id = Some(job_id);
-
-        self.queue.push_back(dispatch);
-
-        Ok(job_id)
     }
 
     async fn update_job(
@@ -113,9 +92,10 @@ impl DispatchClient {
         }
     }
 
-    async fn post(&mut self) {
-        if let Some(dispatch) = self.get_dispatch().await {
-            let job_id = dispatch.job_id.unwrap();
+    /// attempts to post a dispatch from the queue
+    async fn try_post(&mut self) {
+        if let Some(dispatch) = self.try_get_dispatch().await {
+            let job_id = dispatch.job_id;
 
             let (status, dispatch_id, error) =
                 match self.client.post_dispatch(dispatch.clone()).await {
@@ -172,7 +152,8 @@ impl DispatchClient {
         }
     }
 
-    async fn get_dispatch(&mut self) -> Option<IntermediateDispatch> {
+    /// checks queue for dispatch that is eligible to be posted within the current `PERIOD`
+    async fn try_get_dispatch(&mut self) -> Option<IntermediateDispatch> {
         for (index, dispatch) in self.queue.iter().enumerate() {
             if self.post_in(dispatch).await <= PERIOD {
                 return Some(self.queue.remove(index).unwrap());
@@ -210,18 +191,15 @@ impl DispatchClient {
                     }
                 },
                 Ok(command) => {
-                    let response = match self.queue(command.dispatch).await {
-                        Ok(val) => Response::Success(val),
-                        Err(e) => Response::Error(e),
-                    };
+                    self.queue.push_back(command.dispatch);
 
-                    if let Err(e) = command.tx.send(response) {
+                    if let Err(e) = command.tx.send(Response::Success) {
                         tracing::error!("Error sending dispatch response, {:?}", e);
                     }
                 }
             }
 
-            self.post().await;
+            self.try_post().await;
 
             tokio::time::sleep(PERIOD).await;
         }
