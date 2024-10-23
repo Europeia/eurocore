@@ -8,7 +8,7 @@ use tracing::instrument;
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
-use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch, Response};
+use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch};
 use crate::types::response::{Dispatch, DispatchStatus};
 use crate::utils::auth::User;
 
