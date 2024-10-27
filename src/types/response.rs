@@ -1,4 +1,3 @@
-use crate::core::client::Client;
 use serde::Serialize;
 
 #[derive(Serialize)]

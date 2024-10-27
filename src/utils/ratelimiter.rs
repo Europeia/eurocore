@@ -156,7 +156,13 @@ impl Ratelimiter {
                 return;
             }
 
-            let cooldown = self.bucket_length - now.duration_since(*requests.front().unwrap());
+            let cooldown = self
+                .bucket_length
+                .checked_sub(now.duration_since(*requests.front().unwrap()))
+                .unwrap_or_else(|| {
+                    tracing::warn!("Cooldown is negative or overflowed, setting to zero");
+                    Duration::ZERO
+                });
 
             drop(requests);
 
@@ -172,7 +178,16 @@ impl Ratelimiter {
 
             if let Some(last) = last_restricted_action.get(nation) {
                 if now.duration_since(*last) < self.restricted_action_cooldown {
-                    let cooldown = self.restricted_action_cooldown - now.duration_since(*last);
+                    let cooldown = self
+                        .restricted_action_cooldown
+                        .checked_sub(now.duration_since(*last))
+                        .unwrap_or_else(|| {
+                            tracing::warn!(
+                                "Restricted cooldown is negative or overflowed, setting to zero"
+                            );
+                            Duration::ZERO
+                        });
+
                     drop(last_restricted_action);
                     sleep(cooldown).await;
                     continue;
@@ -198,7 +213,18 @@ impl Ratelimiter {
             if let Some(last) = *last_telegram_sent {
                 if now.duration_since(last) < self.telegram_cooldown {
                     drop(last_telegram_sent);
-                    sleep(self.telegram_cooldown - now.duration_since(last)).await;
+
+                    let cooldown = self
+                        .telegram_cooldown
+                        .checked_sub(now.duration_since(last))
+                        .unwrap_or_else(|| {
+                            tracing::warn!(
+                                "Telegram cooldown is negative or overflowed, setting to zero"
+                            );
+                            Duration::ZERO
+                        });
+
+                    sleep(cooldown).await;
                     continue;
                 }
             }
@@ -219,7 +245,18 @@ impl Ratelimiter {
             if let Some(last) = *last_recruitment_telegram_sent {
                 if now.duration_since(last) < self.recruitment_cooldown {
                     drop(last_recruitment_telegram_sent);
-                    sleep(self.recruitment_cooldown - now.duration_since(last)).await;
+
+                    let cooldown = self
+                        .recruitment_cooldown
+                        .checked_sub(now.duration_since(last))
+                        .unwrap_or_else(|| {
+                            tracing::warn!(
+                                "Recruitment cooldown is negative or overflowed, setting to zero"
+                            );
+                            Duration::ZERO
+                        });
+
+                    sleep(cooldown).await;
                     continue;
                 }
             }

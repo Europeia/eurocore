@@ -2,6 +2,7 @@ use sqlx::postgres::PgPool;
 use std::collections::VecDeque;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tracing;
 
 use crate::core::client::Client;
 use crate::ns::dispatch::{Action, Command, IntermediateDispatch, Response};
@@ -96,6 +97,7 @@ impl DispatchClient {
     /// attempts to post a dispatch from the queue
     async fn try_post(&mut self) {
         if let Some(dispatch) = self.try_get_dispatch().await {
+            tracing::info!("Eligible dispatch found, posting");
             let job_id = dispatch.job_id;
 
             let (status, dispatch_id, error) =
@@ -192,6 +194,7 @@ impl DispatchClient {
                     }
                 },
                 Ok(command) => {
+                    tracing::info!("Queueing job");
                     self.queue.push_back(command.dispatch);
 
                     if let Err(e) = command.tx.send(Response::Success) {
