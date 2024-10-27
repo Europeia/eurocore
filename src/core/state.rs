@@ -37,17 +37,25 @@ impl AppState {
         &self,
         action: &str,
         payload: Json<T>,
-    ) -> Result<i32, Error> {
-        let job_id: i32 = sqlx::query(
-            "INSERT INTO dispatch_queue (type, payload, status) VALUES ($1, $2, 'queued') RETURNING id",
+    ) -> Result<response::DispatchStatus, Error> {
+        let status = sqlx::query(
+            "INSERT INTO dispatch_queue (type, payload, status) VALUES ($1, $2, 'queued')
+            RETURNING
+                id,
+                type AS action,
+                status,
+                dispatch_id,
+                error,
+                timezone('utc', created_at) as created_at,
+                timezone('utc', modified_at) as modified_at;",
         )
-            .bind(action)
-            .bind(payload)
-            .map(|row: PgRow| row.get(0))
-            .fetch_one(&self.pool)
-            .await?;
+        .bind(action)
+        .bind(payload)
+        .map(map_dispatch_status)
+        .fetch_one(&self.pool)
+        .await?;
 
-        Ok(job_id)
+        Ok(status)
     }
 
     pub(crate) async fn get_dispatch_status(

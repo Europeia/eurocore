@@ -47,16 +47,16 @@ pub(crate) async fn post_dispatch(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Json(params): Json<NewDispatch>,
-) -> Result<(StatusCode, Json<i32>), Error> {
+) -> Result<(StatusCode, Json<DispatchStatus>), Error> {
     if !user.claims.contains(&"dispatches.create".to_string()) {
         return Err(Error::Unauthorized);
     }
 
-    let job_id = state
+    let job = state
         .queue_dispatch("add", sqlx::types::Json(params.clone()))
         .await?;
 
-    let dispatch = IntermediateDispatch::add(job_id, user.username, params)?;
+    let dispatch = IntermediateDispatch::add(job.id, user.username, params)?;
 
     let (tx, rx) = oneshot::channel();
 
@@ -67,7 +67,7 @@ pub(crate) async fn post_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job_id))),
+        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job))),
         Err(_e) => Err(Error::Internal),
     }
 }
@@ -79,18 +79,18 @@ pub(crate) async fn edit_dispatch(
     Extension(user): Extension<User>,
     Path(id): Path<i32>,
     Json(params): Json<EditDispatch>,
-) -> Result<(StatusCode, Json<i32>), Error> {
+) -> Result<(StatusCode, Json<DispatchStatus>), Error> {
     if !user.claims.contains(&"dispatches.edit".to_string()) {
         return Err(Error::Unauthorized);
     }
 
     let nation = state.get_dispatch_nation(id).await?;
 
-    let job_id = state
+    let job = state
         .queue_dispatch("edit", sqlx::types::Json(params.clone()))
         .await?;
 
-    let dispatch = IntermediateDispatch::edit(job_id, user.username, id, nation, params)?;
+    let dispatch = IntermediateDispatch::edit(job.id, user.username, id, nation, params)?;
 
     let (tx, rx) = oneshot::channel();
 
@@ -101,7 +101,7 @@ pub(crate) async fn edit_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job_id))),
+        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job))),
         Err(_e) => Err(Error::Internal),
     }
 }
@@ -112,18 +112,18 @@ pub(crate) async fn remove_dispatch(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Path(id): Path<i32>,
-) -> Result<(StatusCode, Json<i32>), Error> {
+) -> Result<(StatusCode, Json<DispatchStatus>), Error> {
     if !user.claims.contains(&"dispatches.delete".to_string()) {
         return Err(Error::Unauthorized);
     }
 
     let nation = state.get_dispatch_nation(id).await?;
 
-    let job_id = state
+    let job = state
         .queue_dispatch("remove", sqlx::types::Json(id))
         .await?;
 
-    let dispatch = IntermediateDispatch::delete(job_id, user.username, id, nation);
+    let dispatch = IntermediateDispatch::delete(job.id, user.username, id, nation);
 
     let (tx, rx) = oneshot::channel();
 
@@ -134,7 +134,7 @@ pub(crate) async fn remove_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job_id))),
+        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job))),
         Err(_e) => Err(Error::Internal),
     }
 }
