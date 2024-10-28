@@ -22,7 +22,7 @@ pub(crate) struct User {
     pub(crate) claims: sqlx::types::Json<Vec<String>>,
 }
 
-pub(crate) fn encode_jwt(user: User, secret: &str) -> Result<String, Error> {
+pub(crate) fn encode_jwt(user: &User, secret: &str) -> Result<String, Error> {
     let current_time = Utc::now();
     let expiration_time = current_time + Duration::days(1);
 
@@ -32,7 +32,7 @@ pub(crate) fn encode_jwt(user: User, secret: &str) -> Result<String, Error> {
     let claims = Claims {
         exp,
         iat,
-        sub: user.username,
+        sub: user.username.to_string(),
         iss: "https://api.europeia.dev".into(),
     };
 
