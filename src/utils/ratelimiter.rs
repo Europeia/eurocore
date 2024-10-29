@@ -110,7 +110,12 @@ impl Ratelimiter {
     async fn peek_restricted(&self, nation: &str) -> Duration {
         if let Some(instant) = self.last_restricted_action.read().await.get(nation) {
             let now = Instant::now();
-            self.restricted_action_cooldown - now.duration_since(*instant)
+
+            if now.duration_since(*instant) > self.restricted_action_cooldown {
+                Duration::ZERO
+            } else {
+                self.restricted_action_cooldown - now.duration_since(*instant)
+            }
         } else {
             Duration::ZERO
         }
@@ -119,7 +124,12 @@ impl Ratelimiter {
     async fn peek_telegram(&self) -> Duration {
         if let Some(instant) = *self.last_telegram.read().await {
             let now = Instant::now();
-            self.telegram_cooldown - now.duration_since(instant)
+
+            if now.duration_since(instant) > self.telegram_cooldown {
+                Duration::ZERO
+            } else {
+                self.telegram_cooldown - now.duration_since(instant)
+            }
         } else {
             Duration::ZERO
         }
@@ -128,7 +138,12 @@ impl Ratelimiter {
     async fn peek_recruitment_telegram(&self) -> Duration {
         if let Some(instant) = *self.last_recruitment.read().await {
             let now = Instant::now();
-            self.recruitment_cooldown - now.duration_since(instant)
+
+            if now.duration_since(instant) > self.recruitment_cooldown {
+                Duration::ZERO
+            } else {
+                self.recruitment_cooldown - now.duration_since(instant)
+            }
         } else {
             Duration::ZERO
         }
