@@ -19,7 +19,7 @@ pub(crate) struct Claims {
 pub(crate) struct User {
     pub(crate) username: String,
     pub(crate) password_hash: String,
-    pub(crate) claims: sqlx::types::Json<Vec<String>>,
+    pub(crate) claims: Vec<String>,
 }
 
 pub(crate) fn encode_jwt(user: &User, secret: &str) -> Result<String, Error> {

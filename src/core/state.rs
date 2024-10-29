@@ -231,7 +231,7 @@ impl AppState {
         Ok(User {
             username: nation.to_string(),
             password_hash: password_hash.to_string(),
-            claims: sqlx::types::Json(Vec::new()),
+            claims: Vec::new(),
         })
     }
 
@@ -243,12 +243,12 @@ impl AppState {
             "SELECT
             users.username,
             users.password_hash,
-            json_agg(permissions.name) AS permissions
+            COALESCE(array_agg(permissions.name), '{}') AS permissions
             FROM
                 users
-            JOIN
+            LEFT JOIN
                 user_permissions ON users.id = user_permissions.user_id
-            JOIN
+            LEFT JOIN
                 permissions ON user_permissions.permission_id = permissions.id
             WHERE
                 users.username = $1
@@ -274,14 +274,14 @@ impl AppState {
             "SELECT
             users.username,
             users.password_hash,
-            json_agg(permissions.name) AS permissions
+            COALESCE(array_agg(permissions.name), '{}') AS permissions
             FROM
                 api_keys
             JOIN
                 users ON api_keys.user_id = users.id
-            JOIN
+            LEFT JOIN
                 user_permissions ON users.id = user_permissions.user_id
-            JOIN
+            LEFT JOIN
                 permissions ON user_permissions.permission_id = permissions.id
             WHERE
                 key = $1
