@@ -39,6 +39,11 @@ impl Client {
     }
 
     #[instrument(skip_all)]
+    pub(crate) async fn get_nation_names(&self) -> Vec<String> {
+        self.nations.get_nation_names().await
+    }
+
+    #[instrument(skip_all)]
     pub(crate) async fn contains_nation(&self, nation: &str) -> bool {
         self.nations.contains_nation(nation).await
     }
@@ -84,7 +89,10 @@ impl Client {
             .post(&self.url)
             .header("X-Password", password)
             .header("X-Pin", pin)
-            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header(
+                "Content-Type",
+                "application/x-www-form-urlencoded; charset=UTF-8",
+            )
             .body(body)
             .send()
             .await?
