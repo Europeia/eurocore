@@ -1,3 +1,4 @@
+use axum::routing::options;
 use axum::{
     extract::MatchedPath,
     http::Request,
@@ -22,6 +23,7 @@ pub(crate) async fn routes(state: AppState) -> Router {
             "/dispatches/:nation",
             get(routes::dispatch::get_dispatches_by_nation),
         )
+        .route("/dispatch", options(routes::dispatch::dispatch_options))
         .route(
             "/dispatch",
             post(routes::dispatch::post_dispatch).layer(middleware::from_fn_with_state(

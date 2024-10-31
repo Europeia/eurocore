@@ -38,6 +38,10 @@ impl NationList {
         Self(Arc::new(RwLock::new(nations)))
     }
 
+    pub(crate) async fn get_nation_names(&self) -> Vec<String> {
+        self.0.read().await.keys().cloned().collect()
+    }
+
     pub(crate) async fn contains_nation(&self, name: &str) -> bool {
         self.0.read().await.get(name).is_some()
     }
