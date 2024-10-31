@@ -4,6 +4,7 @@ use sqlx::types::Json;
 use sqlx::Row;
 use tokio::sync::mpsc;
 
+use crate::core::client::Client;
 use crate::core::error::Error;
 use crate::ns::dispatch;
 use crate::ns::telegram;
@@ -14,6 +15,7 @@ use crate::utils::auth::User;
 pub(crate) struct AppState {
     pub(crate) pool: PgPool,
     pub(crate) secret: String,
+    pub(crate) client: Client,
     pub(crate) telegram_sender: mpsc::Sender<telegram::Command>,
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
 }
@@ -22,12 +24,14 @@ impl AppState {
     pub(crate) async fn new(
         pool: PgPool,
         secret: String,
+        client: Client,
         telegram_sender: mpsc::Sender<telegram::Command>,
         dispatch_sender: mpsc::Sender<dispatch::Command>,
     ) -> Self {
         AppState {
             pool,
             secret,
+            client,
             telegram_sender,
             dispatch_sender,
         }

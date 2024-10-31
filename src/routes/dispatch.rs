@@ -1,5 +1,5 @@
 use axum::extract::{Json, Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::Extension;
 use axum_macros::debug_handler;
 use sqlx;
@@ -11,6 +11,20 @@ use crate::core::state::AppState;
 use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch};
 use crate::types::response::{Dispatch, DispatchStatus};
 use crate::utils::auth::User;
+
+#[instrument(skip_all)]
+pub(crate) async fn dispatch_options(
+    State(state): State<AppState>,
+) -> Result<(HeaderMap, StatusCode), Error> {
+    let mut headers = HeaderMap::new();
+
+    let nations = HeaderValue::from_str(&state.client.get_nation_names().await.join(","))?;
+
+    headers.insert("X-Nations", nations);
+    headers.insert("Allow", HeaderValue::from_static("OPTIONS, POST"));
+
+    Ok((headers, StatusCode::NO_CONTENT))
+}
 
 #[instrument(skip(state))]
 pub(crate) async fn get_dispatch(
