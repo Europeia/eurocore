@@ -21,6 +21,7 @@ pub(crate) async fn dispatch_options(
     let nations = HeaderValue::from_str(&state.client.get_nation_names().await.join(","))?;
 
     headers.insert("X-Nations", nations);
+    headers.insert("Allow", HeaderValue::from_static("OPTIONS, POST"));
 
     Ok((headers, StatusCode::NO_CONTENT))
 }
