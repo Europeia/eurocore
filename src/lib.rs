@@ -77,7 +77,7 @@ pub async fn run() -> Result<(), Error> {
         telegram_sender,
         dispatch_sender,
     )
-    .await;
+    .await?;
 
     tokio::spawn(async move { telegram_client.run().await });
 

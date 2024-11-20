@@ -62,6 +62,8 @@ pub enum Error {
     JobNotFound,
     #[error("Invalid header value: {0}")]
     Header(#[from] axum::http::header::InvalidHeaderValue),
+    #[error("Invalid username")]
+    InvalidUsername,
 }
 
 impl IntoResponse for Error {
@@ -96,6 +98,7 @@ impl IntoResponse for Error {
             Error::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
             Error::JobNotFound => (StatusCode::NOT_FOUND, "Job not found"),
             Error::Header(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Invalid header value"),
+            Error::InvalidUsername => (StatusCode::BAD_REQUEST, "Invalid username"),
         };
 
         (
