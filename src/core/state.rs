@@ -5,7 +5,7 @@ use sqlx::Row;
 use tokio::sync::mpsc;
 
 use crate::core::client::Client;
-use crate::core::error::Error;
+use crate::core::error::{ConfigError, Error};
 use crate::ns::dispatch;
 use crate::ns::telegram;
 use crate::types::response;
@@ -18,6 +18,7 @@ pub(crate) struct AppState {
     pub(crate) client: Client,
     pub(crate) telegram_sender: mpsc::Sender<telegram::Command>,
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
+    username_re: regex::Regex,
 }
 
 impl AppState {
@@ -27,14 +28,15 @@ impl AppState {
         client: Client,
         telegram_sender: mpsc::Sender<telegram::Command>,
         dispatch_sender: mpsc::Sender<dispatch::Command>,
-    ) -> Self {
-        AppState {
+    ) -> Result<Self, ConfigError> {
+        Ok(AppState {
             pool,
             secret,
             client,
             telegram_sender,
             dispatch_sender,
-        }
+            username_re: regex::Regex::new(r"^[a-zA-Z0-9_-]{3,20}$")?,
+        })
     }
 
     pub(crate) async fn queue_dispatch<T: Serialize>(
@@ -215,11 +217,15 @@ impl AppState {
 
     pub(crate) async fn register_user(
         &self,
-        nation: &str,
+        username: &str,
         password_hash: &str,
     ) -> Result<User, Error> {
+        if !self.username_re.is_match(username) {
+            return Err(Error::InvalidUsername);
+        }
+
         if let Err(e) = sqlx::query("INSERT INTO users (username, password_hash) VALUES ($1, $2);")
-            .bind(nation)
+            .bind(username)
             .bind(password_hash)
             .execute(&self.pool)
             .await
@@ -233,7 +239,7 @@ impl AppState {
         }
 
         Ok(User {
-            username: nation.to_string(),
+            username: username.to_string(),
             password_hash: password_hash.to_string(),
             claims: Vec::new(),
         })
