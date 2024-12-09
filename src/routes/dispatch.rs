@@ -1,5 +1,6 @@
 use axum::extract::{Json, Path, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::IntoResponse;
 use axum::Extension;
 use axum_macros::debug_handler;
 use sqlx;
@@ -13,15 +14,15 @@ use crate::types::response::{Dispatch, DispatchStatus};
 use crate::utils::auth::User;
 
 #[instrument(skip_all)]
-pub(crate) async fn dispatch_options(
+pub(crate) async fn head_dispatch(
     State(state): State<AppState>,
-) -> Result<(HeaderMap, StatusCode), Error> {
+) -> Result<impl IntoResponse, Error> {
     let mut headers = HeaderMap::new();
 
-    let nations = HeaderValue::from_str(&state.client.get_nation_names().await.join(","))?;
-
-    headers.insert("X-Nations", nations);
-    headers.insert("Allow", HeaderValue::from_static("OPTIONS, POST"));
+    headers.insert(
+        "X-Nations",
+        HeaderValue::from_str(&state.client.get_nation_names().await.join(","))?,
+    );
 
     Ok((headers, StatusCode::NO_CONTENT))
 }
@@ -30,7 +31,7 @@ pub(crate) async fn dispatch_options(
 pub(crate) async fn get_dispatch(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-) -> Result<Json<Dispatch>, Error> {
+) -> Result<impl IntoResponse, Error> {
     let dispatch = state.get_dispatch(id).await?;
 
     Ok(Json(dispatch))
@@ -39,7 +40,7 @@ pub(crate) async fn get_dispatch(
 #[instrument(skip(state))]
 pub(crate) async fn get_dispatches(
     State(state): State<AppState>,
-) -> Result<Json<Vec<Dispatch>>, Error> {
+) -> Result<impl IntoResponse, Error> {
     let dispatches = state.get_dispatches(None).await?;
 
     Ok(Json(dispatches))
@@ -49,7 +50,7 @@ pub(crate) async fn get_dispatches(
 pub(crate) async fn get_dispatches_by_nation(
     State(state): State<AppState>,
     Path(nation): Path<String>,
-) -> Result<Json<Vec<Dispatch>>, Error> {
+) -> Result<impl IntoResponse, Error> {
     let dispatches = state.get_dispatches(Some(nation)).await?;
 
     Ok(Json(dispatches))
@@ -61,7 +62,7 @@ pub(crate) async fn post_dispatch(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Json(params): Json<NewDispatch>,
-) -> Result<(StatusCode, Json<DispatchStatus>), Error> {
+) -> Result<impl IntoResponse, Error> {
     if !user.claims.contains(&"dispatches.create".to_string()) {
         return Err(Error::Unauthorized);
     }
@@ -81,7 +82,11 @@ pub(crate) async fn post_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job))),
+        Ok(_) => Ok((
+            StatusCode::ACCEPTED,
+            [(header::LOCATION, format!("/queue/dispatch/{}", job.id))],
+            Json(job),
+        )),
         Err(_e) => Err(Error::Internal),
     }
 }
@@ -93,7 +98,7 @@ pub(crate) async fn edit_dispatch(
     Extension(user): Extension<User>,
     Path(id): Path<i32>,
     Json(params): Json<EditDispatch>,
-) -> Result<(StatusCode, Json<DispatchStatus>), Error> {
+) -> Result<impl IntoResponse, Error> {
     if !user.claims.contains(&"dispatches.edit".to_string()) {
         return Err(Error::Unauthorized);
     }
@@ -115,7 +120,11 @@ pub(crate) async fn edit_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job))),
+        Ok(_) => Ok((
+            StatusCode::ACCEPTED,
+            [(header::LOCATION, format!("/queue/dispatch/{}", job.id))],
+            Json(job),
+        )),
         Err(_e) => Err(Error::Internal),
     }
 }
@@ -126,7 +135,7 @@ pub(crate) async fn remove_dispatch(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Path(id): Path<i32>,
-) -> Result<(StatusCode, Json<DispatchStatus>), Error> {
+) -> Result<impl IntoResponse, Error> {
     if !user.claims.contains(&"dispatches.delete".to_string()) {
         return Err(Error::Unauthorized);
     }
@@ -148,7 +157,11 @@ pub(crate) async fn remove_dispatch(
         .unwrap();
 
     match rx.await {
-        Ok(_) => Ok((StatusCode::ACCEPTED, Json(job))),
+        Ok(_) => Ok((
+            StatusCode::ACCEPTED,
+            [(header::LOCATION, format!("/queue/dispatch/{}", job.id))],
+            Json(job),
+        )),
         Err(_e) => Err(Error::Internal),
     }
 }
@@ -158,7 +171,7 @@ pub(crate) async fn remove_dispatch(
 pub(crate) async fn get_queued_dispatch(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-) -> Result<Json<DispatchStatus>, Error> {
+) -> Result<impl IntoResponse, Error> {
     let status = state.get_dispatch_status(id).await?;
 
     Ok(Json(status))
