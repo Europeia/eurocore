@@ -41,16 +41,6 @@ pub(crate) async fn get_all(State(state): State<AppState>) -> Result<impl IntoRe
     Ok(Json(dispatches))
 }
 
-#[instrument(skip(state))]
-pub(crate) async fn get_dispatches_by_nation(
-    State(state): State<AppState>,
-    Path(nation): Path<String>,
-) -> Result<impl IntoResponse, Error> {
-    let dispatches = state.get_dispatches(Some(nation)).await?;
-
-    Ok(Json(dispatches))
-}
-
 #[instrument(skip(state, user))]
 pub(crate) async fn post(
     State(state): State<AppState>,

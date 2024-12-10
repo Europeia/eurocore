@@ -7,7 +7,7 @@ use axum::{
     extract::{MatchedPath, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode},
     middleware,
-    routing::{get, head, post},
+    routing::{get, head, post, put},
     Router,
 };
 use std::str::FromStr;
@@ -22,31 +22,24 @@ use tower_http::{
 use tracing::info_span;
 
 pub(crate) async fn routes(state: AppState) -> Router {
+    let dispatch_nations = Box::leak(Box::new(state.client.get_nation_names().await.join(",")));
+
+    let authorized_routes = Router::new()
+        .route("/", post(dispatches::post))
+        .route("/:id", put(dispatches::put).delete(dispatches::delete))
+        .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
+            state.clone(),
+            utils::auth::authorize,
+        )));
+
     // /dispatches/...
     let dispatch_router = Router::new()
-        .route(
-            "/",
-            head(dispatches::head)
-                .get(dispatches::get_all)
-                .post(dispatches::post)
-                .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
-                    state.clone(),
-                    utils::auth::authorize,
-                ))),
-        )
-        .route(
-            "/:id",
-            get(dispatches::get)
-                .put(dispatches::put)
-                .delete(dispatches::delete)
-                .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
-                    state.clone(),
-                    utils::auth::authorize,
-                ))),
-        )
+        .route("/", get(dispatches::get_all))
+        .route("/:id", get(dispatches::get))
+        .nest("/", authorized_routes)
         .route_layer(SetResponseHeaderLayer::overriding(
-            HeaderName::from_str("allowed-nations").unwrap(),
-            HeaderValue::from_str(&state.client.get_nation_names().await.join(",")).unwrap(),
+            HeaderName::from_static("allowed-nations"),
+            HeaderValue::from_static(dispatch_nations),
         ));
 
     // /telegrams/...
