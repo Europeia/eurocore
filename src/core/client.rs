@@ -147,8 +147,7 @@ impl Client {
         let response = de::from_str::<Response>(&resp.text().await?)?;
 
         if !response.is_ok() {
-            tracing::error!("Error: {:?}", response.error);
-            return Err(Error::Placeholder);
+            return Err(Error::NationStates(response.error.unwrap()));
         }
 
         dispatch.set_mode(dispatch::Mode::Execute);
@@ -182,8 +181,7 @@ impl Client {
                     .parse()?),
             }
         } else {
-            tracing::error!("Error: {:?}", response.error);
-            Err(Error::Placeholder)
+            Err(Error::NationStates(response.error.unwrap()))
         }
     }
 }

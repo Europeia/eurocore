@@ -1,8 +1,7 @@
 use axum::http::header::InvalidHeaderName;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum_macros::FromRequest;
-use serde::Serialize;
+use axum::BoxError;
 use std::num::ParseIntError;
 
 #[derive(Debug, thiserror::Error)]
@@ -37,8 +36,8 @@ pub enum Error {
     ParseInt(#[from] ParseIntError),
     #[error("SQL error: {0}")]
     Sql(#[from] sqlx::Error),
-    #[error("???")]
-    Placeholder,
+    #[error("NS error: {0}")]
+    NationStates(String),
     #[error("Dispatch not found")]
     DispatchNotFound,
     #[error("JWT error: {0}")]
@@ -71,11 +70,6 @@ pub enum Error {
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        #[derive(Serialize)]
-        struct ErrorResponse {
-            message: String,
-        }
-
         tracing::error!("{:?}", self);
 
         let (status, message) = match self {
@@ -88,7 +82,7 @@ impl IntoResponse for Error {
             }
             Error::ParseInt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Parse int error"),
             Error::Sql(_) => (StatusCode::INTERNAL_SERVER_ERROR, "SQL error"),
-            Error::Placeholder => (StatusCode::INTERNAL_SERVER_ERROR, "???"),
+            Error::NationStates(_) => (StatusCode::INTERNAL_SERVER_ERROR, "NationStates error"),
             Error::DispatchNotFound => (StatusCode::NOT_FOUND, "Dispatch not found"),
             Error::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "JWT error"),
             Error::NoCredentials => (StatusCode::UNAUTHORIZED, "No credentials provided"),
@@ -107,25 +101,11 @@ impl IntoResponse for Error {
             }
         };
 
-        (
-            status,
-            AppJson(ErrorResponse {
-                message: message.to_string(),
-            }),
-        )
-            .into_response()
+        (status, message).into_response()
     }
 }
 
-#[derive(FromRequest)]
-#[from_request(via(axum::Json), rejection(Error))]
-struct AppJson<T>(T);
-
-impl<T> IntoResponse for AppJson<T>
-where
-    axum::Json<T>: IntoResponse,
-{
-    fn into_response(self) -> Response {
-        axum::Json(self.0).into_response()
-    }
+pub(crate) async fn handle_middleware_errors(err: BoxError) -> (StatusCode, &'static str) {
+    tracing::error!("Unhandled error: {:?}", err);
+    (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
 }

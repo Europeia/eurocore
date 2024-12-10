@@ -11,7 +11,7 @@ use crate::types::response;
 use crate::utils::auth::User;
 
 #[instrument(skip(state, user))]
-pub(crate) async fn get_telegrams(
+pub(crate) async fn get(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
 ) -> Result<Json<HashMap<String, Vec<response::Telegram>>>, Error> {
@@ -41,7 +41,7 @@ pub(crate) async fn get_telegrams(
 }
 
 #[instrument(skip(state, user))]
-pub(crate) async fn queue_telegram(
+pub(crate) async fn post(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Json(params): Json<Vec<Params>>,
@@ -68,7 +68,7 @@ pub(crate) async fn queue_telegram(
 }
 
 #[instrument(skip(state, user))]
-pub(crate) async fn delete_telegram(
+pub(crate) async fn delete(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Json(params): Json<Header>,

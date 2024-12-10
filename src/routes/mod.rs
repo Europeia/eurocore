@@ -1,4 +1,6 @@
-pub(crate) mod auth;
-pub(crate) mod dispatch;
+mod auth;
+mod dispatches;
+mod nations;
+mod queue;
 pub(crate) mod router;
-pub(crate) mod telegram;
+mod telegrams;

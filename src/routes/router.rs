@@ -1,111 +1,106 @@
-use axum::extract::State;
-use axum::middleware::Next;
-use axum::routing::options;
+use crate::core::error;
+use crate::core::state::AppState;
+use crate::routes::{auth, dispatches, nations, queue, telegrams};
+use crate::utils;
+use axum::error_handling::HandleErrorLayer;
 use axum::{
-    body::Body,
     extract::{MatchedPath, Request},
-    http::{HeaderName, Method},
+    http::{HeaderName, HeaderValue, Method, StatusCode},
     middleware,
-    response::Response,
-    routing::{delete, get, head, post, put},
+    routing::{get, head, post},
     Router,
 };
 use std::str::FromStr;
-use tower_http::{cors, trace::TraceLayer};
+use std::time::Duration;
+use tower::ServiceBuilder;
+use tower_http::{
+    cors::{self, CorsLayer},
+    set_header::SetResponseHeaderLayer,
+    trace::TraceLayer,
+    validate_request::ValidateRequestHeaderLayer,
+};
 use tracing::info_span;
-
-use crate::core::error::Error;
-use crate::core::state::AppState;
-use crate::{routes, utils};
-
-async fn add_dispatch_nations_header(
-    State(state): State<AppState>,
-    mut response: Response,
-) -> Result<Response, Error> {
-    let nations = state.client.get_nation_names().await.join(",");
-
-    response
-        .headers_mut()
-        .insert(HeaderName::from_str("allowed-nations")?, nations.parse()?);
-
-    Ok(response)
-}
 
 pub(crate) async fn routes(state: AppState) -> Router {
     // /dispatches/...
-    let dispatches_router = Router::new()
-        .route("/", get(routes::dispatch::get_dispatches))
-        .route("/:nation", get(routes::dispatch::get_dispatches_by_nation))
-        .layer(
-            cors::CorsLayer::new()
-                .allow_methods([Method::GET])
-                .allow_origin(cors::Any),
-        );
-
-    // /dispatch/...
     let dispatch_router = Router::new()
-        .route("/", head(routes::dispatch::head_dispatch))
-        .route("/:id", get(routes::dispatch::get_dispatch))
-        .route("/", post(routes::dispatch::post_dispatch))
-        .route("/:id", put(routes::dispatch::edit_dispatch))
-        .route("/:id", delete(routes::dispatch::remove_dispatch))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            utils::auth::authorize,
-        ))
-        .layer(
-            cors::CorsLayer::new()
-                .allow_methods([Method::POST, Method::PUT, Method::DELETE])
-                .allow_origin(cors::Any),
+        .route(
+            "/",
+            head(dispatches::head)
+                .get(dispatches::get_all)
+                .post(dispatches::post)
+                .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    utils::auth::authorize,
+                ))),
         )
-        .layer(middleware::map_response_with_state(
-            state.clone(),
-            add_dispatch_nations_header,
+        .route(
+            "/:id",
+            get(dispatches::get)
+                .put(dispatches::put)
+                .delete(dispatches::delete)
+                .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    utils::auth::authorize,
+                ))),
+        )
+        .route_layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_str("allowed-nations").unwrap(),
+            HeaderValue::from_str(&state.client.get_nation_names().await.join(",")).unwrap(),
         ));
 
-    // /telegram/...
+    // /telegrams/...
     let telegram_router = Router::new()
         .route(
             "/",
-            get(routes::telegram::get_telegrams)
-                .post(routes::telegram::queue_telegram)
-                .delete(routes::telegram::delete_telegram),
+            get(telegrams::get)
+                .post(telegrams::post)
+                .delete(telegrams::delete),
         )
-        .layer(middleware::from_fn_with_state(
+        .route_layer(middleware::from_fn_with_state(
             state.clone(),
             utils::auth::authorize,
-        ))
-        .layer(
-            cors::CorsLayer::new()
-                .allow_methods([Method::GET, Method::POST, Method::DELETE])
-                .allow_origin(cors::Any),
-        );
+        ));
 
     // /queue/...
-    let queue_router =
-        Router::new().route("/dispatch/:id", get(routes::dispatch::get_queued_dispatch));
+    let queue_router = Router::new().route("/dispatches/:id", get(queue::dispatch));
+
+    // /nations/...
+    let nation_router = Router::new().route("/:nation/dispatches", get(nations::dispatches::get));
 
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
-        .route("/register", post(routes::auth::register))
-        .route("/login", post(routes::auth::sign_in))
-        .nest("/dispatches", dispatches_router)
-        .nest("/dispatch", dispatch_router)
-        .nest("/telegram", telegram_router)
+        .route("/register", post(auth::register))
+        .route("/login", post(auth::sign_in))
+        .nest("/dispatches", dispatch_router)
+        .nest("/telegrams", telegram_router)
         .nest("/queue", queue_router)
+        .nest("/nations", nation_router)
         .with_state(state)
-        .layer(
-            TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
-                let matched_path = request
-                    .extensions()
-                    .get::<MatchedPath>()
-                    .map(MatchedPath::as_str);
+        .route_layer(
+            ServiceBuilder::new()
+                .layer(
+                    TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
+                        let matched_path = request
+                            .extensions()
+                            .get::<MatchedPath>()
+                            .map(MatchedPath::as_str);
 
-                info_span!(
-                    "request",
-                    method = ?request.method(),
-                    matched_path,
+                        info_span!(
+                            "request",
+                            method = ?request.method(),
+                            matched_path,
+                        )
+                    }),
                 )
-            }),
+                .layer(HandleErrorLayer::new(error::handle_middleware_errors))
+                .buffer(128)
+                .rate_limit(10, Duration::from_secs(1))
+                .layer(
+                    CorsLayer::new()
+                        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+                        .allow_origin(cors::Any)
+                        .expose_headers([HeaderName::from_str("allowed-nations").unwrap()]),
+                ),
         )
 }

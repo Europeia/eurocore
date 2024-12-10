@@ -2,21 +2,18 @@ use axum::extract::{Json, Path, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::Extension;
-use axum_macros::debug_handler;
 use sqlx;
 use tokio::sync::oneshot;
 use tracing::instrument;
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
-use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch};
+use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch, Response};
 use crate::types::response::{Dispatch, DispatchStatus};
 use crate::utils::auth::User;
 
 #[instrument(skip_all)]
-pub(crate) async fn head_dispatch(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, Error> {
+pub(crate) async fn head(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
     let mut headers = HeaderMap::new();
 
     headers.insert(
@@ -28,7 +25,7 @@ pub(crate) async fn head_dispatch(
 }
 
 #[instrument(skip(state))]
-pub(crate) async fn get_dispatch(
+pub(crate) async fn get(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<impl IntoResponse, Error> {
@@ -38,9 +35,7 @@ pub(crate) async fn get_dispatch(
 }
 
 #[instrument(skip(state))]
-pub(crate) async fn get_dispatches(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, Error> {
+pub(crate) async fn get_all(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
     let dispatches = state.get_dispatches(None).await?;
 
     Ok(Json(dispatches))
@@ -56,9 +51,8 @@ pub(crate) async fn get_dispatches_by_nation(
     Ok(Json(dispatches))
 }
 
-// #[debug_handler]
 #[instrument(skip(state, user))]
-pub(crate) async fn post_dispatch(
+pub(crate) async fn post(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Json(params): Json<NewDispatch>,
@@ -81,19 +75,11 @@ pub(crate) async fn post_dispatch(
         .await
         .unwrap();
 
-    match rx.await {
-        Ok(_) => Ok((
-            StatusCode::ACCEPTED,
-            [(header::LOCATION, format!("/queue/dispatch/{}", job.id))],
-            Json(job),
-        )),
-        Err(_e) => Err(Error::Internal),
-    }
+    return_queued_dispatch(rx, job).await
 }
 
-// #[debug_handler]
 #[instrument(skip(state, user))]
-pub(crate) async fn edit_dispatch(
+pub(crate) async fn put(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Path(id): Path<i32>,
@@ -119,19 +105,11 @@ pub(crate) async fn edit_dispatch(
         .await
         .unwrap();
 
-    match rx.await {
-        Ok(_) => Ok((
-            StatusCode::ACCEPTED,
-            [(header::LOCATION, format!("/queue/dispatch/{}", job.id))],
-            Json(job),
-        )),
-        Err(_e) => Err(Error::Internal),
-    }
+    return_queued_dispatch(rx, job).await
 }
 
-// #[debug_handler]
 #[instrument(skip(state, user))]
-pub(crate) async fn remove_dispatch(
+pub(crate) async fn delete(
     State(state): State<AppState>,
     Extension(user): Extension<User>,
     Path(id): Path<i32>,
@@ -156,6 +134,13 @@ pub(crate) async fn remove_dispatch(
         .await
         .unwrap();
 
+    return_queued_dispatch(rx, job).await
+}
+
+async fn return_queued_dispatch(
+    rx: oneshot::Receiver<Response>,
+    job: DispatchStatus,
+) -> Result<impl IntoResponse, Error> {
     match rx.await {
         Ok(_) => Ok((
             StatusCode::ACCEPTED,
@@ -164,15 +149,4 @@ pub(crate) async fn remove_dispatch(
         )),
         Err(_e) => Err(Error::Internal),
     }
-}
-
-// #[debug_handler]
-#[instrument(skip(state))]
-pub(crate) async fn get_queued_dispatch(
-    State(state): State<AppState>,
-    Path(id): Path<i32>,
-) -> Result<impl IntoResponse, Error> {
-    let status = state.get_dispatch_status(id).await?;
-
-    Ok(Json(status))
 }
