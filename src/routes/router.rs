@@ -17,7 +17,6 @@ use tower_http::{
     cors::{self, CorsLayer},
     set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
-    validate_request::ValidateRequestHeaderLayer,
 };
 use tracing::info_span;
 
