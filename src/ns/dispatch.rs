@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use crate::core::error::Error;
+use crate::ns::types::Mode;
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) enum FactbookCategory {
@@ -144,24 +145,6 @@ pub(crate) enum AccountSubcategory {
 pub(crate) enum MetaSubcategory {
     Gameplay,  // 835
     Reference, // 845
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum Mode {
-    Prepare,
-    Execute,
-}
-
-impl Serialize for Mode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::ser::Serializer,
-    {
-        match self {
-            Mode::Prepare => serializer.serialize_str("prepare"),
-            Mode::Execute => serializer.serialize_str("execute"),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
