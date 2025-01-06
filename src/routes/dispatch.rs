@@ -18,7 +18,7 @@ pub(crate) async fn head(State(state): State<AppState>) -> Result<impl IntoRespo
 
     headers.insert(
         "X-Nations",
-        HeaderValue::from_str(&state.client.get_nation_names().await.join(","))?,
+        HeaderValue::from_str(&state.client.get_dispatch_nation_names().await.join(","))?,
     );
 
     Ok((headers, StatusCode::NO_CONTENT))

@@ -3,6 +3,12 @@ use serde::Serialize;
 use std::marker::PhantomData;
 use tokio::sync::oneshot;
 
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct NewRmbPost {
+    pub(crate) nation: String,
+    pub(crate) text: String,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct IntermediateRmbPost {
     pub(crate) job_id: i32,
@@ -22,6 +28,12 @@ pub(crate) struct RmbPost<T: Serialize + PrivateCommand> {
     #[serde(skip_serializing_if = "Option::is_none")]
     token: Option<String>,
     _state: PhantomData<T>,
+}
+
+impl<T: Serialize + PrivateCommand> RmbPost<T> {
+    pub(crate) fn nation(&self) -> &str {
+        &self.nation
+    }
 }
 
 impl RmbPost<Unprepared> {
@@ -58,7 +70,7 @@ impl From<IntermediateRmbPost> for RmbPost<Unprepared> {
 
 #[derive(Debug)]
 pub(crate) struct Command {
-    rmbpost: IntermediateRmbPost,
+    pub(crate) rmbpost: IntermediateRmbPost,
     pub(crate) tx: oneshot::Sender<Response>,
 }
 

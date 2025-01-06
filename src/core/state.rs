@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
 use crate::ns::dispatch;
+use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
 use crate::ns::telegram;
 use crate::types::response;
 use crate::utils::auth::User;
@@ -215,6 +216,27 @@ impl AppState {
         Ok(dispatches)
     }
 
+    pub(crate) async fn queue_rmbpost(
+        self,
+        rmbpost: NewRmbPost,
+    ) -> Result<response::RmbPostStatus, Error> {
+        let status = sqlx::query(
+            "INSERT INTO rmbpost_queue (payload, status) VALUES ($1, 'queued') RETURNING
+                id,
+                status,
+                rmbpost_id,
+                error,
+                timezone('utc', created_at) as created_at,
+                timezone('utc', modified_at) as modified_at;",
+        )
+        .bind(Json(rmbpost))
+        .map(map_rmbpost_status)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(status)
+    }
+
     pub(crate) async fn register_user(
         &self,
         username: &str,
@@ -344,6 +366,17 @@ fn map_dispatch_status(row: PgRow) -> response::DispatchStatus {
         action: row.get("action"),
         status: row.get("status"),
         dispatch_id: row.get("dispatch_id"),
+        error: row.get("error"),
+        created_at: row.get("created_at"),
+        modified_at: row.get("modified_at"),
+    }
+}
+
+fn map_rmbpost_status(row: PgRow) -> response::RmbPostStatus {
+    response::RmbPostStatus {
+        id: row.get("id"),
+        status: row.get("status"),
+        rmbpost_id: row.get("rmbpost_id"),
         error: row.get("error"),
         created_at: row.get("created_at"),
         modified_at: row.get("modified_at"),

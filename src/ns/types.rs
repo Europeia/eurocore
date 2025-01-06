@@ -40,10 +40,10 @@ impl Serialize for Mode {
 /// Marker trait for  types that can be used as data for an NS command.
 pub(crate) trait PrivateCommand {}
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(crate) struct Unprepared;
 impl PrivateCommand for Unprepared {}
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(crate) struct Prepared;
 impl PrivateCommand for Prepared {}

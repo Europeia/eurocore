@@ -1,7 +1,7 @@
 mod auth;
-mod dispatches;
+mod dispatch;
 mod nations;
 mod queue;
-mod rmbposts;
+mod rmbpost;
 pub(crate) mod router;
-mod telegrams;
+mod telegram;

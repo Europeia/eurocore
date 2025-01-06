@@ -29,6 +29,16 @@ pub(crate) struct DispatchStatus {
     pub(crate) modified_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Serialize)]
+pub(crate) struct RmbPostStatus {
+    pub(crate) id: i32,
+    pub(crate) status: String,
+    pub(crate) rmbpost_id: Option<i32>,
+    pub(crate) error: Option<String>,
+    pub(crate) created_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) modified_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Serialize, Debug)]
 pub(crate) struct Telegram {
     recipient: String,
