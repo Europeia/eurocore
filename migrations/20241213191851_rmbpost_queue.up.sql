@@ -1,11 +1,11 @@
 -- Add up migration script here
-CREATE TABLE rmbpost_queue 
+CREATE TABLE rmbpost_queue
 (
-    id SERIAL PRIMARY KEY,
+    id         SERIAL PRIMARY KEY,
     rmbpost_id INTEGER,
-    text VARCHAR NOT NULL,
-    status VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    error TEXT,
+    payload    JSONB        NOT NULL,
+    status     VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    error      TEXT
 );
