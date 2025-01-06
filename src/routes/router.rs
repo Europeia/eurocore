@@ -1,6 +1,6 @@
 use crate::core::error;
 use crate::core::state::AppState;
-use crate::routes::{auth, dispatches, nations, queue, telegrams};
+use crate::routes::{auth, dispatch, nations, queue, telegram};
 use crate::utils;
 use axum::error_handling::HandleErrorLayer;
 use axum::{
@@ -21,11 +21,13 @@ use tower_http::{
 use tracing::info_span;
 
 pub(crate) async fn routes(state: AppState) -> Router {
-    let dispatch_nations = Box::leak(Box::new(state.client.get_nation_names().await.join(",")));
+    let dispatch_nations = Box::leak(Box::new(
+        state.client.get_dispatch_nation_names().await.join(","),
+    ));
 
     let authorized_routes = Router::new()
-        .route("/", post(dispatches::post))
-        .route("/:id", put(dispatches::put).delete(dispatches::delete))
+        .route("/", post(dispatch::post))
+        .route("/{id}", put(dispatch::put).delete(dispatch::delete))
         .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
             state.clone(),
             utils::auth::authorize,
@@ -33,8 +35,8 @@ pub(crate) async fn routes(state: AppState) -> Router {
 
     // /dispatches/...
     let dispatch_router = Router::new()
-        .route("/", get(dispatches::get_all))
-        .route("/:id", get(dispatches::get))
+        .route("/", get(dispatch::get_all))
+        .route("/{id}", get(dispatch::get))
         .nest("/", authorized_routes)
         .route_layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("allowed-nations"),
@@ -45,9 +47,9 @@ pub(crate) async fn routes(state: AppState) -> Router {
     let telegram_router = Router::new()
         .route(
             "/",
-            get(telegrams::get)
-                .post(telegrams::post)
-                .delete(telegrams::delete),
+            get(telegram::get)
+                .post(telegram::post)
+                .delete(telegram::delete),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -55,10 +57,10 @@ pub(crate) async fn routes(state: AppState) -> Router {
         ));
 
     // /queue/...
-    let queue_router = Router::new().route("/dispatches/:id", get(queue::dispatch));
+    let queue_router = Router::new().route("/dispatches/{id}", get(queue::dispatch));
 
     // /nations/...
-    let nation_router = Router::new().route("/:nation/dispatches", get(nations::dispatches::get));
+    let nation_router = Router::new().route("/{nation}/dispatches", get(nations::dispatches::get));
 
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
