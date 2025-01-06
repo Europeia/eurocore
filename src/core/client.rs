@@ -1,3 +1,8 @@
+use htmlentity::entity::ICodedDataTrait;
+use htmlentity::{
+    self,
+    entity::{CharacterSet, EncodeType},
+};
 use quick_xml::de;
 use regex::Regex;
 use serde::Deserialize;
@@ -7,7 +12,9 @@ use crate::core::error::{ConfigError, Error};
 use crate::ns::dispatch;
 use crate::ns::dispatch::Action;
 use crate::ns::nation::NationList;
+use crate::ns::rmbpost::IntermediateRmbPost;
 use crate::ns::telegram::{Telegram, TgType};
+use crate::ns::types::Mode;
 use crate::utils::ratelimiter::{Ratelimiter, Target};
 
 #[derive(Clone, Debug)]
@@ -15,14 +22,17 @@ pub(crate) struct Client {
     pub(crate) ratelimiter: Ratelimiter,
     client: reqwest::Client,
     url: String,
-    nations: NationList,
+    dispatch_nations: NationList,
+    rmbpost_nations: NationList,
     dispatch_id_regex: Regex,
+    rmbpost_id_regex: Regex,
 }
 
 impl Client {
     pub(crate) fn new(
         user: &str,
-        nations: NationList,
+        dispatch_nations: NationList,
+        rmbpost_nations: NationList,
         ratelimiter: Ratelimiter,
     ) -> Result<Self, ConfigError> {
         let client = reqwest::ClientBuilder::new().user_agent(user).build()?;
@@ -33,19 +43,21 @@ impl Client {
             ratelimiter,
             client,
             url,
-            nations,
+            dispatch_nations,
+            rmbpost_nations,
             dispatch_id_regex: Regex::new(r#"(\d+)"#)?,
+            rmbpost_id_regex: Regex::new(r#"=(\d+)#"#)?,
         })
     }
 
     #[instrument(skip_all)]
-    pub(crate) async fn get_nation_names(&self) -> Vec<String> {
-        self.nations.get_nation_names().await
+    pub(crate) async fn get_dispatch_nation_names(&self) -> Vec<String> {
+        self.dispatch_nations.get_nation_names().await
     }
 
     #[instrument(skip_all)]
-    pub(crate) async fn contains_nation(&self, nation: &str) -> bool {
-        self.nations.contains_nation(nation).await
+    pub(crate) async fn contains_dispatch_nation(&self, nation: &str) -> bool {
+        self.dispatch_nations.contains_nation(nation).await
     }
 
     #[instrument(skip_all)]
@@ -104,7 +116,7 @@ impl Client {
         &mut self,
         mut dispatch: dispatch::IntermediateDispatch,
     ) -> Result<i32, Error> {
-        let password = self.nations.get_password(&dispatch.nation).await?;
+        let password = self.dispatch_nations.get_password(&dispatch.nation).await?;
 
         let dispatch_id = match dispatch.action {
             Action::Add { .. } => None,
@@ -114,14 +126,30 @@ impl Client {
 
         match &mut dispatch.action {
             Action::Add { ref mut text, .. } => {
-                *text = convert_to_latin_charset(text);
+                // *text = convert_to_latin_charset(text);
+
+                *text = htmlentity::entity::encode(
+                    text.as_bytes(),
+                    &EncodeType::Decimal,
+                    &CharacterSet::All,
+                )
+                .to_string()
+                .unwrap();
 
                 self.ratelimiter
                     .acquire_for(Target::Restricted(&dispatch.nation))
                     .await
             }
             Action::Edit { ref mut text, .. } => {
-                *text = convert_to_latin_charset(text);
+                // *text = convert_to_latin_charset(text);
+
+                *text = htmlentity::entity::encode(
+                    text.as_bytes(),
+                    &EncodeType::Decimal,
+                    &CharacterSet::All,
+                )
+                .to_string()
+                .unwrap();
 
                 self.ratelimiter.acquire_for(Target::Standard).await
             }
@@ -133,13 +161,13 @@ impl Client {
         let resp = self
             .dispatch(
                 &password,
-                &self.nations.get_pin(&dispatch.nation).await?,
+                &self.dispatch_nations.get_pin(&dispatch.nation).await?,
                 serde_urlencoded::to_string(dispatch.clone())?,
             )
             .await?;
 
         if let Some(val) = resp.headers().get("X-Pin") {
-            self.nations
+            self.dispatch_nations
                 .set_pin(&dispatch.nation, val.to_str().map_err(Error::HeaderDecode)?)
                 .await?;
         }
@@ -150,7 +178,7 @@ impl Client {
             return Err(Error::NationStates(response.error.unwrap()));
         }
 
-        dispatch.set_mode(dispatch::Mode::Execute);
+        dispatch.set_mode(Mode::Execute);
         dispatch.set_token(response.success.unwrap());
 
         self.ratelimiter.acquire_for(Target::Standard).await;
@@ -158,7 +186,7 @@ impl Client {
         let resp = self
             .dispatch(
                 &password,
-                &self.nations.get_pin(&dispatch.nation).await?,
+                &self.dispatch_nations.get_pin(&dispatch.nation).await?,
                 serde_urlencoded::to_string(dispatch)?,
             )
             .await?;
@@ -180,6 +208,67 @@ impl Client {
                     .as_str()
                     .parse()?),
             }
+        } else {
+            Err(Error::NationStates(response.error.unwrap()))
+        }
+    }
+
+    #[instrument(skip_all)]
+    pub(crate) async fn post_rmbpost(
+        &mut self,
+        mut rmbpost: IntermediateRmbPost,
+    ) -> Result<i32, Error> {
+        let password = self.rmbpost_nations.get_password(&rmbpost.nation).await?;
+
+        rmbpost.text = convert_to_latin_charset(&rmbpost.text);
+
+        self.ratelimiter
+            .acquire_for(Target::Restricted(&rmbpost.nation))
+            .await;
+
+        let rmbpost = crate::ns::rmbpost::RmbPost::from(rmbpost);
+
+        let resp = self
+            .dispatch(
+                &password,
+                &self.dispatch_nations.get_pin(rmbpost.nation()).await?,
+                serde_urlencoded::to_string(rmbpost.clone())?,
+            )
+            .await?;
+
+        if let Some(val) = resp.headers().get("X-Pin") {
+            self.dispatch_nations
+                .set_pin(rmbpost.nation(), val.to_str().map_err(Error::HeaderDecode)?)
+                .await?;
+        }
+
+        let response = de::from_str::<Response>(&resp.text().await?)?;
+
+        if !response.is_ok() {
+            return Err(Error::NationStates(response.error.unwrap()));
+        }
+
+        let rmbpost = rmbpost.prepare(response.success.unwrap());
+
+        self.ratelimiter.acquire_for(Target::Standard).await;
+
+        let resp = self
+            .dispatch(
+                &password,
+                &self.dispatch_nations.get_pin(rmbpost.nation()).await?,
+                serde_urlencoded::to_string(rmbpost)?,
+            )
+            .await?;
+
+        let response = de::from_str::<Response>(&resp.text().await?)?;
+
+        if response.is_ok() {
+            Ok(self
+                .dispatch_id_regex
+                .find(&response.success.unwrap())
+                .unwrap()
+                .as_str()
+                .parse()?)
         } else {
             Err(Error::NationStates(response.error.unwrap()))
         }
