@@ -6,6 +6,7 @@ use tokio::sync::oneshot;
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct NewRmbPost {
     pub(crate) nation: String,
+    pub(crate) region: String,
     pub(crate) text: String,
 }
 
@@ -15,6 +16,17 @@ pub(crate) struct IntermediateRmbPost {
     pub(crate) nation: String,
     pub(crate) region: String,
     pub(crate) text: String,
+}
+
+impl IntermediateRmbPost {
+    pub(crate) fn new(job_id: i32, nation: String, region: String, text: String) -> Self {
+        Self {
+            job_id,
+            nation,
+            region,
+            text,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -72,6 +84,12 @@ impl From<IntermediateRmbPost> for RmbPost<Unprepared> {
 pub(crate) struct Command {
     pub(crate) rmbpost: IntermediateRmbPost,
     pub(crate) tx: oneshot::Sender<Response>,
+}
+
+impl Command {
+    pub(crate) fn new(rmbpost: IntermediateRmbPost, tx: oneshot::Sender<Response>) -> Self {
+        Self { rmbpost, tx }
+    }
 }
 
 #[derive(Debug)]

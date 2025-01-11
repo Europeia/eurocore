@@ -15,7 +15,7 @@ pub(crate) async fn post(
         return Err(Error::Unauthorized);
     }
 
-    let job = state.queue_rmbpost(params.clone()).await?;
+    let status = state.queue_rmbpost(params.clone()).await?;
 
-    Ok(Json(job))
+    Ok(Json(status))
 }

@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::postgres::{PgPool, PgRow};
 use sqlx::types::Json;
 use sqlx::Row;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
@@ -224,7 +224,7 @@ impl AppState {
         rmbpost: NewRmbPost,
     ) -> Result<response::RmbPostStatus, Error> {
         let status = sqlx::query(
-            "INSERT INTO rmbpost_queue (payload, status) VALUES ($1, 'queued') RETURNING
+            "INSERT INTO rmbpost_queue (nation, region, text, status) VALUES ($1, $2, $3, 'queued') RETURNING
                 id,
                 status,
                 rmbpost_id,
@@ -232,10 +232,26 @@ impl AppState {
                 timezone('utc', created_at) as created_at,
                 timezone('utc', modified_at) as modified_at;",
         )
-        .bind(Json(rmbpost))
+        .bind(&rmbpost.nation)
+        .bind(&rmbpost.region)
+        .bind(&rmbpost.text)
         .map(map_rmbpost_status)
         .fetch_one(&self.pool)
         .await?;
+
+        let rmbpost =
+            IntermediateRmbPost::new(status.id, rmbpost.nation, rmbpost.region, rmbpost.text);
+
+        let (tx, rx) = oneshot::channel();
+
+        self.rmbpost_sender
+            .send(rmbpost::Command::new(rmbpost, tx))
+            .await
+            .unwrap();
+
+        if let Err(e) = rx.await {
+            tracing::error!("Error sending rmbpost response, {:?}", e);
+        }
 
         Ok(status)
     }
