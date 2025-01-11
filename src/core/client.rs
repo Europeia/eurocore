@@ -90,7 +90,7 @@ impl Client {
     }
 
     #[instrument(skip_all)]
-    async fn dispatch(
+    async fn execute(
         &mut self,
         password: &str,
         pin: &str,
@@ -159,7 +159,7 @@ impl Client {
         let mut dispatch = dispatch::Dispatch::from(dispatch);
 
         let resp = self
-            .dispatch(
+            .execute(
                 &password,
                 &self.dispatch_nations.get_pin(&dispatch.nation).await?,
                 serde_urlencoded::to_string(dispatch.clone())?,
@@ -184,7 +184,7 @@ impl Client {
         self.ratelimiter.acquire_for(Target::Standard).await;
 
         let resp = self
-            .dispatch(
+            .execute(
                 &password,
                 &self.dispatch_nations.get_pin(&dispatch.nation).await?,
                 serde_urlencoded::to_string(dispatch)?,
@@ -229,15 +229,15 @@ impl Client {
         let rmbpost = crate::ns::rmbpost::RmbPost::from(rmbpost);
 
         let resp = self
-            .dispatch(
+            .execute(
                 &password,
-                &self.dispatch_nations.get_pin(rmbpost.nation()).await?,
+                &self.rmbpost_nations.get_pin(rmbpost.nation()).await?,
                 serde_urlencoded::to_string(rmbpost.clone())?,
             )
             .await?;
 
         if let Some(val) = resp.headers().get("X-Pin") {
-            self.dispatch_nations
+            self.rmbpost_nations
                 .set_pin(rmbpost.nation(), val.to_str().map_err(Error::HeaderDecode)?)
                 .await?;
         }
@@ -253,9 +253,9 @@ impl Client {
         self.ratelimiter.acquire_for(Target::Standard).await;
 
         let resp = self
-            .dispatch(
+            .execute(
                 &password,
-                &self.dispatch_nations.get_pin(rmbpost.nation()).await?,
+                &self.rmbpost_nations.get_pin(rmbpost.nation()).await?,
                 serde_urlencoded::to_string(rmbpost)?,
             )
             .await?;
