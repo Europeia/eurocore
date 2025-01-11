@@ -7,7 +7,7 @@ use axum::{
     extract::{MatchedPath, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode},
     middleware,
-    routing::{get, head, post, put},
+    routing::{get, post, put},
     Router,
 };
 use std::str::FromStr;
@@ -64,6 +64,7 @@ pub(crate) async fn routes(state: AppState) -> Router {
 
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
+        .route("/heartbeat", get(|| async { StatusCode::OK }))
         .route("/register", post(auth::register))
         .route("/login", post(auth::sign_in))
         .nest("/dispatches", dispatch_router)
