@@ -3,6 +3,13 @@ name = "eurocore"
 version = "0.9.0"
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "eurocore"
+
 [dependencies]
 axum = "0.8.1"
 axum-macros = "0.5"
