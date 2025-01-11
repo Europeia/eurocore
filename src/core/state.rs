@@ -6,9 +6,9 @@ use tokio::sync::mpsc;
 
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
-use crate::ns::dispatch;
 use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
 use crate::ns::telegram;
+use crate::ns::{dispatch, rmbpost};
 use crate::types::response;
 use crate::utils::auth::User;
 
@@ -19,6 +19,7 @@ pub(crate) struct AppState {
     pub(crate) client: Client,
     pub(crate) telegram_sender: mpsc::Sender<telegram::Command>,
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
+    rmbpost_sender: mpsc::Sender<rmbpost::Command>,
     username_re: regex::Regex,
 }
 
@@ -29,6 +30,7 @@ impl AppState {
         client: Client,
         telegram_sender: mpsc::Sender<telegram::Command>,
         dispatch_sender: mpsc::Sender<dispatch::Command>,
+        rmbpost_sender: mpsc::Sender<rmbpost::Command>,
     ) -> Result<Self, ConfigError> {
         Ok(AppState {
             pool,
@@ -36,6 +38,7 @@ impl AppState {
             client,
             telegram_sender,
             dispatch_sender,
+            rmbpost_sender,
             username_re: regex::Regex::new(r"^[a-zA-Z0-9_-]{3,20}$")?,
         })
     }

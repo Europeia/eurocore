@@ -7,6 +7,7 @@ pub(crate) mod workers;
 
 use config::Config;
 use sqlx::postgres::PgPoolOptions;
+use std::collections::HashMap;
 use std::time::Duration;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -15,6 +16,7 @@ use crate::core::error::ConfigError as Error;
 use crate::core::{client::Client, config::Args, state::AppState};
 use crate::ns::nation::{create_nations_map, NationList};
 use crate::utils::ratelimiter::Ratelimiter;
+use crate::workers::rmbpost::RmbPostClient;
 use crate::workers::{dispatch::DispatchClient, telegram::TelegramClient};
 
 pub async fn run() -> Result<(), Error> {
@@ -53,7 +55,8 @@ pub async fn run() -> Result<(), Error> {
 
     let client = Client::new(
         &config.user,
-        NationList::new(create_nations_map(&config.nations)),
+        NationList::new(create_nations_map(&config.dispatch_nations)),
+        NationList::new(create_nations_map(&config.rmbpost_nations)),
         ratelimiter,
     )?;
 
@@ -70,18 +73,25 @@ pub async fn run() -> Result<(), Error> {
     let mut dispatch_client =
         DispatchClient::new(db_pool.clone(), client.clone(), dispatch_receiver);
 
+    let (rmbpost_sender, rmbpost_receiver) = tokio::sync::mpsc::channel(8);
+
+    let mut rmbpost_client = RmbPostClient::new(db_pool.clone(), client.clone(), rmbpost_receiver);
+
     let state = AppState::new(
         db_pool.clone(),
         config.secret,
         client,
         telegram_sender,
         dispatch_sender,
+        rmbpost_sender,
     )
     .await?;
 
     tokio::spawn(async move { telegram_client.run().await });
 
     tokio::spawn(async move { dispatch_client.run().await });
+
+    tokio::spawn(async move { rmbpost_client.run().await });
 
     sqlx::migrate!().run(&db_pool.clone()).await?;
 
