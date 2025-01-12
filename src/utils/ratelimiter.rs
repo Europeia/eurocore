@@ -11,7 +11,7 @@ pub(crate) enum Target<'a> {
     RecruitmentTelegram(&'a str),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct Ratelimiter {
     //TODO: create a method to update these from the headers that NS returns
     max_requests: usize,
@@ -28,6 +28,22 @@ pub(crate) struct Ratelimiter {
     // 30 seconds per nation
     restricted_action_cooldown: Duration,
     last_restricted_action: Arc<RwLock<HashMap<String, Instant>>>,
+}
+
+impl std::fmt::Debug for Ratelimiter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ratelimiter")
+            .field("max_requests", &self.max_requests)
+            .field("current_requests", &self.get_num_requests())
+            .field("bucket_length", &self.bucket_length)
+            .field("telegram_cooldown", &self.telegram_cooldown)
+            .field("recruitment_cooldown", &self.recruitment_cooldown)
+            .field(
+                "restricted_action_cooldown",
+                &self.restricted_action_cooldown,
+            )
+            .finish()
+    }
 }
 
 impl Ratelimiter {
@@ -51,6 +67,10 @@ impl Ratelimiter {
             last_restricted_action: Arc::new(RwLock::new(HashMap::new())),
             restricted_action_cooldown,
         }
+    }
+
+    fn get_num_requests(&self) -> usize {
+        tokio::runtime::Handle::current().block_on(async { self.requests.read().await.len() })
     }
 
     /// remove expired requests from the bucket

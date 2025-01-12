@@ -17,7 +17,7 @@ use crate::ns::telegram::{Telegram, TgType};
 use crate::ns::types::Mode;
 use crate::utils::ratelimiter::{Ratelimiter, Target};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct Client {
     pub(crate) ratelimiter: Ratelimiter,
     client: reqwest::Client,
@@ -26,6 +26,16 @@ pub(crate) struct Client {
     rmbpost_nations: NationList,
     dispatch_id_regex: Regex,
     rmbpost_id_regex: Regex,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("ratelimiter", &self.ratelimiter)
+            .field("dispatch_nations", &self.dispatch_nations)
+            .field("rmbpost_nations", &self.rmbpost_nations)
+            .finish()
+    }
 }
 
 impl Client {
@@ -58,6 +68,11 @@ impl Client {
     #[instrument(skip_all)]
     pub(crate) async fn contains_dispatch_nation(&self, nation: &str) -> bool {
         self.dispatch_nations.contains_nation(nation).await
+    }
+
+    #[instrument(skip_all)]
+    pub(crate) async fn get_rmbpost_nation_names(&self) -> Vec<String> {
+        self.rmbpost_nations.get_nation_names().await
     }
 
     #[instrument(skip_all)]
@@ -264,7 +279,7 @@ impl Client {
 
         if response.is_ok() {
             Ok(self
-                .dispatch_id_regex
+                .rmbpost_id_regex
                 .find(&response.success.unwrap())
                 .unwrap()
                 .as_str()
