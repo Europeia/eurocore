@@ -25,6 +25,10 @@ pub(crate) async fn routes(state: AppState) -> Router {
         state.client.get_dispatch_nation_names().await.join(","),
     ));
 
+    let rmbpost_nations = Box::leak(Box::new(
+        state.client.get_rmbpost_nation_names().await.join(","),
+    ));
+
     let authorized_routes = Router::new()
         .route("/", post(dispatch::post))
         .route("/{id}", put(dispatch::put).delete(dispatch::delete))
@@ -62,6 +66,10 @@ pub(crate) async fn routes(state: AppState) -> Router {
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             utils::auth::authorize,
+        ))
+        .route_layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("allowed-nations"),
+            HeaderValue::from_static(rmbpost_nations),
         ));
 
     // /queue/...
