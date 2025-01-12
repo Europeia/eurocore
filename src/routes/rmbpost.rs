@@ -3,6 +3,7 @@ use crate::core::state::AppState;
 use crate::ns::rmbpost::NewRmbPost;
 use crate::utils::auth::User;
 use axum::extract::State;
+use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
 
@@ -17,5 +18,9 @@ pub(crate) async fn post(
 
     let status = state.queue_rmbpost(params.clone()).await?;
 
-    Ok(Json(status))
+    Ok((
+        StatusCode::ACCEPTED,
+        [(header::LOCATION, format!("/queue/rmbpost/{}", status.id))],
+        Json(status),
+    ))
 }

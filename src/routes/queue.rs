@@ -5,7 +5,6 @@ use axum::response::IntoResponse;
 use axum::Json;
 use tracing::instrument;
 
-// #[debug_handler]
 #[instrument(skip(state))]
 pub(crate) async fn dispatch(
     State(state): State<AppState>,
