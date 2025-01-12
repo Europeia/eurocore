@@ -56,8 +56,8 @@ impl AppState {
                 status,
                 dispatch_id,
                 error,
-                timezone('utc', created_at) as created_at,
-                timezone('utc', modified_at) as modified_at;",
+                created_at,
+                modified_at;",
         )
         .bind(action)
         .bind(payload)
@@ -79,8 +79,8 @@ impl AppState {
                 status,
                 dispatch_id,
                 error,
-                timezone('utc', created_at) as created_at,
-                timezone('utc', modified_at) as modified_at
+                created_at,
+                modified_at
             FROM dispatch_queue
             WHERE id = $1;",
         )
@@ -124,7 +124,7 @@ impl AppState {
                 dispatch_content.title,
                 dispatch_content.text,
                 dispatch_content.created_by,
-                timezone('utc', dispatch_content.created_at) as created_at
+                dispatch_content.created_at as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -154,7 +154,7 @@ impl AppState {
                 dispatch_content.title,
                 dispatch_content.text,
                 dispatch_content.created_by,
-                timezone('utc', dispatch_content.created_at) as created_at
+                dispatch_content.created_at as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -186,7 +186,7 @@ impl AppState {
                 dispatch_content.title,
                 dispatch_content.text,
                 dispatch_content.created_by,
-                timezone('utc', dispatch_content.created_at) as created_at
+                dispatch_content.created_at as created_at
             FROM dispatches
             JOIN
                 dispatch_content ON dispatch_content.dispatch_id = dispatches.id
@@ -224,13 +224,13 @@ impl AppState {
         rmbpost: NewRmbPost,
     ) -> Result<response::RmbPostStatus, Error> {
         let status = sqlx::query(
-            "INSERT INTO rmbpost_queue (nation, region, text, status) VALUES ($1, $2, $3, 'queued') RETURNING
+            "INSERT INTO rmbpost_queue (nation, region, content, status) VALUES ($1, $2, $3, 'queued') RETURNING
                 id,
                 status,
                 rmbpost_id,
                 error,
-                timezone('utc', created_at) as created_at,
-                timezone('utc', modified_at) as modified_at;",
+                created_at,
+                modified_at;",
         )
         .bind(&rmbpost.nation)
         .bind(&rmbpost.region)
