@@ -1,6 +1,6 @@
 use crate::core::error;
 use crate::core::state::AppState;
-use crate::routes::{auth, dispatch, nations, queue, telegram};
+use crate::routes::{auth, dispatch, nations, queue, rmbpost, telegram};
 use crate::utils;
 use axum::error_handling::HandleErrorLayer;
 use axum::{
@@ -35,9 +35,9 @@ pub(crate) async fn routes(state: AppState) -> Router {
 
     // /dispatches/...
     let dispatch_router = Router::new()
-        .route("/", get(dispatch::get_all))
-        .route("/{id}", get(dispatch::get))
-        .nest("/", authorized_routes)
+        .route("/dispatches", get(dispatch::get_all))
+        .route("/dispatches/{id}", get(dispatch::get))
+        .nest("/dispatches/", authorized_routes)
         .route_layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("allowed-nations"),
             HeaderValue::from_static(dispatch_nations),
@@ -46,7 +46,7 @@ pub(crate) async fn routes(state: AppState) -> Router {
     // /telegrams/...
     let telegram_router = Router::new()
         .route(
-            "/",
+            "/telegrams",
             get(telegram::get)
                 .post(telegram::post)
                 .delete(telegram::delete),
@@ -56,21 +56,33 @@ pub(crate) async fn routes(state: AppState) -> Router {
             utils::auth::authorize,
         ));
 
+    // /rmbposts/...
+    let rmbpost_router = Router::new()
+        .route("/rmbposts", post(rmbpost::post))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            utils::auth::authorize,
+        ));
+
     // /queue/...
-    let queue_router = Router::new().route("/dispatches/{id}", get(queue::dispatch));
+    let queue_router = Router::new().route("/queue/dispatches/{id}", get(queue::dispatch));
 
     // /nations/...
-    let nation_router = Router::new().route("/{nation}/dispatches", get(nations::dispatches::get));
+    let nation_router = Router::new().route(
+        "/nations/{nation}/dispatches",
+        get(nations::dispatches::get),
+    );
 
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/heartbeat", get(|| async { StatusCode::OK }))
         .route("/register", post(auth::register))
         .route("/login", post(auth::sign_in))
-        .nest("/dispatches", dispatch_router)
-        .nest("/telegrams", telegram_router)
-        .nest("/queue", queue_router)
-        .nest("/nations", nation_router)
+        .merge(dispatch_router)
+        .merge(telegram_router)
+        .merge(rmbpost_router)
+        .merge(queue_router)
+        .merge(nation_router)
         .with_state(state)
         .route_layer(
             ServiceBuilder::new()
