@@ -256,6 +256,34 @@ impl AppState {
         Ok(status)
     }
 
+    pub(crate) async fn get_rmbpost_status(
+        &self,
+        id: i32,
+    ) -> Result<response::RmbPostStatus, Error> {
+        let status = match sqlx::query(
+            "SELECT
+                id,
+                status,
+                rmbpost_id,
+                error,
+                created_at,
+                modified_at
+            FROM rmbpost_queue
+            WHERE id = $1;",
+        )
+        .bind(id)
+        .map(map_rmbpost_status)
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(status) => status,
+            Err(sqlx::Error::RowNotFound) => return Err(Error::JobNotFound),
+            Err(e) => return Err(Error::Sql(e)),
+        };
+
+        Ok(status)
+    }
+
     pub(crate) async fn register_user(
         &self,
         username: &str,

@@ -73,7 +73,9 @@ pub(crate) async fn routes(state: AppState) -> Router {
         ));
 
     // /queue/...
-    let queue_router = Router::new().route("/queue/dispatches/{id}", get(queue::dispatch));
+    let queue_router = Router::new()
+        .route("/queue/dispatches/{id}", get(queue::dispatch))
+        .route("/queue/rmbposts/{id}", get(queue::rmbpost));
 
     // /nations/...
     let nation_router = Router::new().route(
