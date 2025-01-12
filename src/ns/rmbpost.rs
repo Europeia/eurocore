@@ -1,9 +1,9 @@
 use super::types::{Mode, Prepared, PrivateCommand, Unprepared};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use tokio::sync::oneshot;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(crate) struct NewRmbPost {
     pub(crate) nation: String,
     pub(crate) region: String,
