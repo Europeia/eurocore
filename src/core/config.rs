@@ -10,7 +10,8 @@ pub(crate) struct Args {
     pub(crate) database_password: String,
     pub(crate) log_level: String,
     pub(crate) port: u16,
-    pub(crate) nations: String,
+    pub(crate) dispatch_nations: String,
+    pub(crate) rmbpost_nations: String,
     pub(crate) secret: String,
     pub(crate) telegram_client_key: String,
 }

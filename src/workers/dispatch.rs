@@ -4,10 +4,10 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing;
 
+use super::PERIOD;
 use crate::core::client::Client;
 use crate::ns::dispatch::{Action, Command, IntermediateDispatch, Response};
 use crate::utils::ratelimiter::Target;
-use crate::workers::PERIOD;
 
 #[derive(Debug)]
 pub(crate) struct DispatchClient {
