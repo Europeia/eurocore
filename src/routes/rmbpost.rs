@@ -20,7 +20,7 @@ pub(crate) async fn post(
 
     Ok((
         StatusCode::ACCEPTED,
-        [(header::LOCATION, format!("/queue/rmbpost/{}", status.id))],
+        [(header::LOCATION, format!("/queue/rmbposts/{}", status.id))],
         Json(status),
     ))
 }
