@@ -134,7 +134,7 @@ async fn return_queued_dispatch(
     match rx.await {
         Ok(_) => Ok((
             StatusCode::ACCEPTED,
-            [(header::LOCATION, format!("/queue/dispatch/{}", job.id))],
+            [(header::LOCATION, format!("/queue/dispatches/{}", job.id))],
             Json(job),
         )),
         Err(_e) => Err(Error::Internal),
