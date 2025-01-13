@@ -280,9 +280,8 @@ impl Client {
         if response.is_ok() {
             Ok(self
                 .rmbpost_id_regex
-                .find(&response.success.unwrap())
-                .unwrap()
-                .as_str()
+                .captures(&response.success.unwrap())
+                .unwrap()[1]
                 .parse()?)
         } else {
             Err(Error::NationStates(response.error.unwrap()))
