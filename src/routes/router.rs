@@ -115,7 +115,13 @@ pub(crate) async fn routes(state: AppState) -> Router {
                 .rate_limit(10, Duration::from_secs(1))
                 .layer(
                     CorsLayer::new()
-                        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+                        .allow_methods([
+                            Method::HEAD,
+                            Method::GET,
+                            Method::POST,
+                            Method::PUT,
+                            Method::DELETE,
+                        ])
                         .allow_origin(cors::Any)
                         .expose_headers([HeaderName::from_str("allowed-nations").unwrap()]),
                 ),
