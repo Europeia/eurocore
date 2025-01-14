@@ -30,8 +30,11 @@ pub(crate) async fn routes(state: AppState) -> Router {
     ));
 
     let authorized_routes = Router::new()
-        .route("/", post(dispatch::post))
-        .route("/{id}", put(dispatch::put).delete(dispatch::delete))
+        .route("/dispatches", post(dispatch::post))
+        .route(
+            "/dispatches/{id}",
+            put(dispatch::put).delete(dispatch::delete),
+        )
         .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
             state.clone(),
             utils::auth::authorize,
@@ -41,7 +44,7 @@ pub(crate) async fn routes(state: AppState) -> Router {
     let dispatch_router = Router::new()
         .route("/dispatches", get(dispatch::get_all))
         .route("/dispatches/{id}", get(dispatch::get))
-        .nest("/dispatches/", authorized_routes)
+        .merge(authorized_routes)
         .route_layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("allowed-nations"),
             HeaderValue::from_static(dispatch_nations),
