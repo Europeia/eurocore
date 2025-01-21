@@ -126,6 +126,25 @@ impl Client {
             .error_for_status()?)
     }
 
+    fn encode(&self, input: &str) -> String {
+        input
+            .chars()
+            .map(|char| {
+                if char.is_ascii() {
+                    char.to_string()
+                } else {
+                    htmlentity::entity::encode(
+                        char.encode_utf8(&mut [0; 4]).as_bytes(),
+                        &EncodeType::Decimal,
+                        &CharacterSet::All,
+                    )
+                    .to_string()
+                    .unwrap()
+                }
+            })
+            .collect()
+    }
+
     #[instrument(skip_all)]
     pub(crate) async fn post_dispatch(
         &mut self,
@@ -141,30 +160,14 @@ impl Client {
 
         match &mut dispatch.action {
             Action::Add { ref mut text, .. } => {
-                // *text = convert_to_latin_charset(text);
-
-                *text = htmlentity::entity::encode(
-                    text.as_bytes(),
-                    &EncodeType::Decimal,
-                    &CharacterSet::All,
-                )
-                .to_string()
-                .unwrap();
+                *text = self.encode(text.as_str());
 
                 self.ratelimiter
                     .acquire_for(Target::Restricted(&dispatch.nation))
                     .await
             }
             Action::Edit { ref mut text, .. } => {
-                // *text = convert_to_latin_charset(text);
-
-                *text = htmlentity::entity::encode(
-                    text.as_bytes(),
-                    &EncodeType::Decimal,
-                    &CharacterSet::All,
-                )
-                .to_string()
-                .unwrap();
+                *text = self.encode(text.as_str());
 
                 self.ratelimiter.acquire_for(Target::Standard).await
             }
