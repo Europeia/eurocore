@@ -14,7 +14,7 @@ pub(crate) struct LoginData {
     pub(crate) password: String,
 }
 
-pub(crate) async fn sign_in(
+pub(crate) async fn login(
     State(state): State<AppState>,
     Json(user_data): Json<LoginData>,
 ) -> Result<Json<response::Login>, Error> {
