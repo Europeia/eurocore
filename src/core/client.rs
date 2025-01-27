@@ -238,7 +238,7 @@ impl Client {
     ) -> Result<i32, Error> {
         let password = self.rmbpost_nations.get_password(&rmbpost.nation).await?;
 
-        rmbpost.text = convert_to_latin_charset(&rmbpost.text);
+        rmbpost.text = self.encode(&rmbpost.text);
 
         self.ratelimiter
             .acquire_for(Target::Restricted(&rmbpost.nation))
@@ -303,15 +303,4 @@ impl Response {
     fn is_ok(&self) -> bool {
         self.success.is_some()
     }
-}
-
-fn convert_to_latin_charset(input: &str) -> String {
-    input
-        .replace("’", "'")
-        .replace("“", "\"")
-        .replace("”", "\"")
-        .replace("—", "-")
-        .replace("–", "-")
-        .replace("…", "...")
-        .replace("‘", "'")
 }
