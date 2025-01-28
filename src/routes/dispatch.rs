@@ -9,8 +9,8 @@ use tracing::instrument;
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch, Response};
-use crate::types::response::{Dispatch, DispatchStatus};
-use crate::utils::auth::AuthorizedUser;
+use crate::types::response::DispatchStatus;
+use crate::types::AuthorizedUser;
 
 #[instrument(skip_all)]
 pub(crate) async fn head(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {

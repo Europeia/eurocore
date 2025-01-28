@@ -87,9 +87,7 @@ pub(crate) async fn routes(state: AppState) -> Router {
         get(nations::dispatches::get),
     );
 
-    // /users/...
-    let user_router = Router::new()
-        .route("/users/{id}", get(user::get))
+    let authorized_user_routes = Router::new()
         .route(
             "/users/me/password",
             patch(user::update_password).route_layer(middleware::from_fn_with_state(
@@ -102,6 +100,12 @@ pub(crate) async fn routes(state: AppState) -> Router {
             state.clone(),
             utils::auth::authorize,
         ));
+
+    // /users/...
+    let user_router = Router::new()
+        .route("/users/{id}", get(user::get))
+        .route("/users/username/{username}", get(user::get_by_username))
+        .merge(authorized_user_routes);
 
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))

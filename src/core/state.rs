@@ -10,7 +10,7 @@ use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
 use crate::ns::telegram;
 use crate::ns::{dispatch, rmbpost};
 use crate::types::response;
-use crate::utils::auth::{AuthorizedUser, Username};
+use crate::types::{AuthorizedUser, Username};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -297,21 +297,24 @@ impl AppState {
             return Err(Error::InvalidUsername);
         }
 
-        if let Err(e) = sqlx::query("INSERT INTO users (username, password_hash) VALUES ($1, $2);")
-            .bind(username)
-            .bind(password_hash)
-            .execute(&self.pool)
-            .await
+        let id: i32 = match sqlx::query(
+            "INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id;",
+        )
+        .bind(username)
+        .bind(password_hash)
+        .map(|row: PgRow| row.get("id"))
+        .fetch_one(&self.pool)
+        .await
         {
-            return match e {
-                sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-                    Err(Error::UserAlreadyExists)
-                }
-                _ => Err(Error::Sql(e)),
-            };
-        }
+            Ok(id) => id,
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+                return Err(Error::UserAlreadyExists)
+            }
+            Err(e) => return Err(Error::Sql(e)),
+        };
 
         Ok(AuthorizedUser {
+            id,
             username: username.to_string(),
             password_hash: password_hash.to_string(),
             claims: Vec::new(),
@@ -332,12 +335,13 @@ impl AppState {
         Ok(())
     }
 
-    pub(crate) async fn retrieve_user_by_username(
+    pub(crate) async fn get_user_by_username(
         &self,
         username: &str,
     ) -> Result<Option<AuthorizedUser>, Error> {
         match sqlx::query(
             "SELECT
+            users.id,
             users.username,
             users.password_hash,
             COALESCE(array_agg(permissions.name), '{}') AS permissions
@@ -363,12 +367,13 @@ impl AppState {
         }
     }
 
-    pub(crate) async fn retrieve_user_by_api_key(
+    pub(crate) async fn get_user_by_api_key(
         &self,
         api_key: &str,
     ) -> Result<Option<AuthorizedUser>, Error> {
         match sqlx::query(
             "SELECT
+            users.id,
             users.username,
             users.password_hash,
             COALESCE(array_agg(permissions.name), '{}') AS permissions
@@ -399,7 +404,7 @@ impl AppState {
     pub(crate) async fn get_user_by_id(&self, id: i32) -> Result<Option<Username>, Error> {
         match sqlx::query("SELECT username FROM users WHERE id = $1;")
             .bind(id)
-            .map(map_username)
+            .map(|row: PgRow| row.get("username"))
             .fetch_one(&self.pool)
             .await
         {
@@ -410,12 +415,9 @@ impl AppState {
     }
 }
 
-fn map_username(row: PgRow) -> Username {
-    row.get("username")
-}
-
 fn map_user(row: PgRow) -> AuthorizedUser {
     AuthorizedUser {
+        id: row.get("id"),
         username: row.get("username"),
         password_hash: row.get("password_hash"),
         claims: row.get("permissions"),

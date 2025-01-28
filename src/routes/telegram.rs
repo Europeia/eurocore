@@ -8,7 +8,7 @@ use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::ns::telegram::{Command, Header, Operation, Params, Response};
 use crate::types::response;
-use crate::utils::auth::AuthorizedUser;
+use crate::types::AuthorizedUser;
 
 #[instrument(skip(state, user))]
 pub(crate) async fn get(

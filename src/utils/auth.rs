@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
+use crate::types::AuthorizedUser;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub(crate) struct Claims {
@@ -13,15 +14,6 @@ pub(crate) struct Claims {
     pub(crate) iat: usize,
     pub(crate) sub: String,
     pub(crate) iss: String,
-}
-
-pub(crate) type Username = String;
-
-#[derive(Clone, Debug, sqlx::FromRow)]
-pub(crate) struct AuthorizedUser {
-    pub(crate) username: Username,
-    pub(crate) password_hash: String,
-    pub(crate) claims: Vec<String>,
 }
 
 pub(crate) fn encode_jwt(user: &AuthorizedUser, secret: &str) -> Result<String, Error> {
@@ -80,10 +72,7 @@ pub(crate) async fn authorize(
 
             let token_data = decode_jwt(token.unwrap_or_default().to_string(), &state.secret)?;
 
-            match state
-                .retrieve_user_by_username(&token_data.claims.sub)
-                .await?
-            {
+            match state.get_user_by_username(&token_data.claims.sub).await? {
                 Some(user) => user,
                 None => return Err(Error::Unauthorized),
             }
@@ -91,7 +80,7 @@ pub(crate) async fn authorize(
         None => {
             let api_key = api_key.unwrap().to_str()?;
 
-            match state.retrieve_user_by_api_key(api_key).await? {
+            match state.get_user_by_api_key(api_key).await? {
                 Some(user) => user,
                 None => return Err(Error::Unauthorized),
             }

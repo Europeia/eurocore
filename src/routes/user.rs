@@ -8,7 +8,8 @@ use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::types::request;
 use crate::types::response;
-use crate::utils::auth::{encode_jwt, AuthorizedUser};
+use crate::types::AuthorizedUser;
+use crate::utils::auth::encode_jwt;
 
 #[derive(Deserialize)]
 pub(crate) struct LoginData {
@@ -21,7 +22,7 @@ pub(crate) async fn login(
     Json(user_data): Json<LoginData>,
 ) -> Result<Json<response::Login>, Error> {
     let user = state
-        .retrieve_user_by_username(&user_data.username)
+        .get_user_by_username(&user_data.username)
         .await?
         .ok_or(Error::Unauthorized)?;
 
@@ -57,6 +58,18 @@ pub(crate) async fn get(
     let username = state.get_user_by_id(id).await?.ok_or(Error::Unauthorized)?;
 
     Ok(Json(response::User::new(id, &username)))
+}
+
+pub(crate) async fn get_by_username(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> Result<impl IntoResponse, Error> {
+    let user = match state.get_user_by_username(&username).await? {
+        Some(user) => user,
+        None => return Err(Error::Unauthorized),
+    };
+
+    Ok(Json(response::User::new(user.id, &user.username)))
 }
 
 pub(crate) async fn update_password(

@@ -5,7 +5,7 @@ use tracing::instrument;
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::types::request;
-use crate::utils::auth::AuthorizedUser;
+use crate::types::{AuthorizedUser, Username};
 
 #[instrument(skip_all)]
 pub(crate) async fn change_user_password(
@@ -18,7 +18,7 @@ pub(crate) async fn change_user_password(
         return Err(Error::Unauthorized);
     }
 
-    let username = match state.get_user_by_id(id).await {
+    let username: Username = match state.get_user_by_id(id).await {
         Ok(Some(user)) => user,
         Ok(None) => return Err(Error::InvalidUsername),
         Err(e) => return Err(e),

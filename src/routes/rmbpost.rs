@@ -1,7 +1,7 @@
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::ns::rmbpost::NewRmbPost;
-use crate::utils::auth::AuthorizedUser;
+use crate::types::AuthorizedUser;
 use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
