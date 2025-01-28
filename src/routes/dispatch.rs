@@ -9,8 +9,8 @@ use tracing::instrument;
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch, Response};
-use crate::types::response::{Dispatch, DispatchStatus};
-use crate::utils::auth::User;
+use crate::types::response::DispatchStatus;
+use crate::types::AuthorizedUser;
 
 #[instrument(skip_all)]
 pub(crate) async fn head(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
@@ -44,7 +44,7 @@ pub(crate) async fn get_all(State(state): State<AppState>) -> Result<impl IntoRe
 #[instrument(skip(state, user))]
 pub(crate) async fn post(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(user): Extension<AuthorizedUser>,
     Json(params): Json<NewDispatch>,
 ) -> Result<impl IntoResponse, Error> {
     if !user.claims.contains(&"dispatches.create".to_string()) {
@@ -71,7 +71,7 @@ pub(crate) async fn post(
 #[instrument(skip(state, user))]
 pub(crate) async fn put(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(user): Extension<AuthorizedUser>,
     Path(id): Path<i32>,
     Json(params): Json<EditDispatch>,
 ) -> Result<impl IntoResponse, Error> {
@@ -101,7 +101,7 @@ pub(crate) async fn put(
 #[instrument(skip(state, user))]
 pub(crate) async fn delete(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(user): Extension<AuthorizedUser>,
     Path(id): Path<i32>,
 ) -> Result<impl IntoResponse, Error> {
     if !user.claims.contains(&"dispatches.delete".to_string()) {

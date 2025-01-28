@@ -8,12 +8,12 @@ use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::ns::telegram::{Command, Header, Operation, Params, Response};
 use crate::types::response;
-use crate::utils::auth::User;
+use crate::types::AuthorizedUser;
 
 #[instrument(skip(state, user))]
 pub(crate) async fn get(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(user): Extension<AuthorizedUser>,
 ) -> Result<Json<HashMap<String, Vec<response::Telegram>>>, Error> {
     if !user.claims.contains(&"telegrams.read".to_string()) {
         return Err(Error::Unauthorized);
@@ -43,7 +43,7 @@ pub(crate) async fn get(
 #[instrument(skip(state, user))]
 pub(crate) async fn post(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(user): Extension<AuthorizedUser>,
     Json(params): Json<Vec<Params>>,
 ) -> Result<String, Error> {
     if !user.claims.contains(&"telegrams.create".to_string()) {
@@ -70,7 +70,7 @@ pub(crate) async fn post(
 #[instrument(skip(state, user))]
 pub(crate) async fn delete(
     State(state): State<AppState>,
-    Extension(user): Extension<User>,
+    Extension(user): Extension<AuthorizedUser>,
     Json(params): Json<Header>,
 ) -> Result<String, Error> {
     if !user.claims.contains(&"telegrams.delete".to_string()) {

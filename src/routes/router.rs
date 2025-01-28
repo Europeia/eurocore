@@ -1,8 +1,9 @@
 use crate::core::error;
 use crate::core::state::AppState;
-use crate::routes::{auth, dispatch, nations, queue, rmbpost, telegram};
+use crate::routes::{admin, dispatch, nations, queue, rmbpost, telegram, user};
 use crate::utils;
 use axum::error_handling::HandleErrorLayer;
+use axum::routing::patch;
 use axum::{
     extract::{MatchedPath, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode},
@@ -86,16 +87,37 @@ pub(crate) async fn routes(state: AppState) -> Router {
         get(nations::dispatches::get),
     );
 
+    let authorized_user_routes = Router::new()
+        .route(
+            "/users/me/password",
+            patch(user::update_password).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                utils::auth::authorize,
+            )),
+        )
+        .route("/users/{id}/password", patch(admin::change_user_password))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            utils::auth::authorize,
+        ));
+
+    // /users/...
+    let user_router = Router::new()
+        .route("/users/{id}", get(user::get))
+        .route("/users/username/{username}", get(user::get_by_username))
+        .merge(authorized_user_routes);
+
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/heartbeat", get(|| async { StatusCode::OK }))
-        .route("/register", post(auth::register))
-        .route("/login", post(auth::sign_in))
+        .route("/register", post(user::register))
+        .route("/login", post(user::login))
         .merge(dispatch_router)
         .merge(telegram_router)
         .merge(rmbpost_router)
         .merge(queue_router)
         .merge(nation_router)
+        .merge(user_router)
         .with_state(state)
         .route_layer(
             ServiceBuilder::new()
