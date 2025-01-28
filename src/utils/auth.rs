@@ -15,14 +15,16 @@ pub(crate) struct Claims {
     pub(crate) iss: String,
 }
 
+pub(crate) type Username = String;
+
 #[derive(Clone, Debug, sqlx::FromRow)]
-pub(crate) struct User {
-    pub(crate) username: String,
+pub(crate) struct AuthorizedUser {
+    pub(crate) username: Username,
     pub(crate) password_hash: String,
     pub(crate) claims: Vec<String>,
 }
 
-pub(crate) fn encode_jwt(user: &User, secret: &str) -> Result<String, Error> {
+pub(crate) fn encode_jwt(user: &AuthorizedUser, secret: &str) -> Result<String, Error> {
     let current_time = Utc::now();
     let expiration_time = current_time + Duration::days(1);
 
