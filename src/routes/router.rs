@@ -3,6 +3,7 @@ use crate::core::state::AppState;
 use crate::routes::{dispatch, nations, queue, rmbpost, telegram, user};
 use crate::utils;
 use axum::error_handling::HandleErrorLayer;
+use axum::routing::patch;
 use axum::{
     extract::{MatchedPath, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode},
@@ -86,6 +87,15 @@ pub(crate) async fn routes(state: AppState) -> Router {
         get(nations::dispatches::get),
     );
 
+    // /users/...
+    let user_router = Router::new().route("/users/{id}", get(user::get)).route(
+        "/users/{id}",
+        patch(user::update_password).route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            utils::auth::authorize,
+        )),
+    );
+
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/heartbeat", get(|| async { StatusCode::OK }))
@@ -96,6 +106,7 @@ pub(crate) async fn routes(state: AppState) -> Router {
         .merge(rmbpost_router)
         .merge(queue_router)
         .merge(nation_router)
+        .merge(user_router)
         .with_state(state)
         .route_layer(
             ServiceBuilder::new()

@@ -10,7 +10,7 @@ use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
 use crate::ns::telegram;
 use crate::ns::{dispatch, rmbpost};
 use crate::types::response;
-use crate::utils::auth::User;
+use crate::utils::auth::{AuthorizedUser, Username};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -284,11 +284,15 @@ impl AppState {
         Ok(status)
     }
 
+    fn hash(&self, value: &str) -> Result<String, Error> {
+        bcrypt::hash(value, 12).map_err(Error::Bcrypt)
+    }
+
     pub(crate) async fn register_user(
         &self,
         username: &str,
         password_hash: &str,
-    ) -> Result<User, Error> {
+    ) -> Result<AuthorizedUser, Error> {
         if !self.username_re.is_match(username) {
             return Err(Error::InvalidUsername);
         }
@@ -307,17 +311,27 @@ impl AppState {
             };
         }
 
-        Ok(User {
+        Ok(AuthorizedUser {
             username: username.to_string(),
             password_hash: password_hash.to_string(),
             claims: Vec::new(),
         })
     }
 
+    pub(crate) async fn reset_password(&self, username: &str, password: &str) -> Result<(), Error> {
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE username = $2;")
+            .bind(self.hash(password)?)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
     pub(crate) async fn retrieve_user_by_username(
         &self,
         username: &str,
-    ) -> Result<Option<User>, Error> {
+    ) -> Result<Option<AuthorizedUser>, Error> {
         match sqlx::query(
             "SELECT
             users.username,
@@ -348,7 +362,7 @@ impl AppState {
     pub(crate) async fn retrieve_user_by_api_key(
         &self,
         api_key: &str,
-    ) -> Result<Option<User>, Error> {
+    ) -> Result<Option<AuthorizedUser>, Error> {
         match sqlx::query(
             "SELECT
             users.username,
@@ -377,10 +391,27 @@ impl AppState {
             Err(e) => Err(Error::Sql(e)),
         }
     }
+
+    pub(crate) async fn get_user_by_id(&self, id: i32) -> Result<Option<Username>, Error> {
+        match sqlx::query("SELECT username FROM users WHERE id = $1;")
+            .bind(id)
+            .map(map_username)
+            .fetch_one(&self.pool)
+            .await
+        {
+            Ok(username) => Ok(Some(username)),
+            Err(sqlx::Error::RowNotFound) => Ok(None),
+            Err(e) => Err(Error::Sql(e)),
+        }
+    }
 }
 
-fn map_user(row: PgRow) -> User {
-    User {
+fn map_username(row: PgRow) -> Username {
+    row.get("username")
+}
+
+fn map_user(row: PgRow) -> AuthorizedUser {
+    AuthorizedUser {
         username: row.get("username"),
         password_hash: row.get("password_hash"),
         claims: row.get("permissions"),
