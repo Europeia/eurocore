@@ -1,6 +1,6 @@
 use crate::core::error;
 use crate::core::state::AppState;
-use crate::routes::{dispatch, nations, queue, rmbpost, telegram, user};
+use crate::routes::{admin, dispatch, nations, queue, rmbpost, telegram, user};
 use crate::utils;
 use axum::error_handling::HandleErrorLayer;
 use axum::routing::patch;
@@ -96,6 +96,14 @@ pub(crate) async fn routes(state: AppState) -> Router {
         )),
     );
 
+    // /admin/...
+    let admin_router = Router::new()
+        .route("/admin/reset_password", patch(admin::change_user_password))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            utils::auth::authorize,
+        ));
+
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/heartbeat", get(|| async { StatusCode::OK }))
@@ -107,6 +115,7 @@ pub(crate) async fn routes(state: AppState) -> Router {
         .merge(queue_router)
         .merge(nation_router)
         .merge(user_router)
+        .merge(admin_router)
         .with_state(state)
         .route_layer(
             ServiceBuilder::new()

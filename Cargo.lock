@@ -528,7 +528,7 @@ dependencies = [
 
 [[package]]
 name = "eurocore"
-version = "0.9.3"
+version = "0.9.5"
 dependencies = [
  "axum",
  "axum-macros",

@@ -318,7 +318,11 @@ impl AppState {
         })
     }
 
-    pub(crate) async fn reset_password(&self, username: &str, password: &str) -> Result<(), Error> {
+    pub(crate) async fn update_password(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<(), Error> {
         sqlx::query("UPDATE users SET password_hash = $1 WHERE username = $2;")
             .bind(self.hash(password)?)
             .bind(username)

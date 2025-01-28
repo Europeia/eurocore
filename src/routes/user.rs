@@ -62,7 +62,7 @@ pub(crate) async fn update_password(
     Extension(user): Extension<AuthorizedUser>,
     Json(new_password): Json<String>,
 ) -> Result<impl IntoResponse, Error> {
-    state.reset_password(&user.username, &new_password).await?;
+    state.update_password(&user.username, &new_password).await?;
 
     Ok(Json("Password reset successfully"))
 }

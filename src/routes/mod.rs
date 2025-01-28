@@ -1,3 +1,4 @@
+mod admin;
 mod dispatch;
 mod nations;
 mod queue;
