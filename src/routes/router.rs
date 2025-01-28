@@ -88,17 +88,16 @@ pub(crate) async fn routes(state: AppState) -> Router {
     );
 
     // /users/...
-    let user_router = Router::new().route("/users/{id}", get(user::get)).route(
-        "/users/{id}",
-        patch(user::update_password).route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            utils::auth::authorize,
-        )),
-    );
-
-    // /admin/...
-    let admin_router = Router::new()
-        .route("/admin/reset_password", patch(admin::change_user_password))
+    let user_router = Router::new()
+        .route("/users/{id}", get(user::get))
+        .route(
+            "/users/me/password",
+            patch(user::update_password).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                utils::auth::authorize,
+            )),
+        )
+        .route("/users/{id}/password", patch(admin::change_user_password))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             utils::auth::authorize,
@@ -115,7 +114,6 @@ pub(crate) async fn routes(state: AppState) -> Router {
         .merge(queue_router)
         .merge(nation_router)
         .merge(user_router)
-        .merge(admin_router)
         .with_state(state)
         .route_layer(
             ServiceBuilder::new()
