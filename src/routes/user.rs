@@ -1,4 +1,5 @@
-use axum::extract::State;
+use axum::extract::{Extension, Path, State};
+use axum::response::IntoResponse;
 use axum::Json;
 use bcrypt::verify;
 use serde::Deserialize;
@@ -6,7 +7,7 @@ use serde::Deserialize;
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::types::response;
-use crate::utils::auth::encode_jwt;
+use crate::utils::auth::{encode_jwt, AuthorizedUser};
 
 #[derive(Deserialize)]
 pub(crate) struct LoginData {
@@ -18,13 +19,10 @@ pub(crate) async fn login(
     State(state): State<AppState>,
     Json(user_data): Json<LoginData>,
 ) -> Result<Json<response::Login>, Error> {
-    let user = match state.retrieve_user_by_username(&user_data.username).await {
-        Ok(resp) => match resp {
-            Some(user) => user,
-            None => return Err(Error::Unauthorized),
-        },
-        Err(e) => return Err(e),
-    };
+    let user = state
+        .retrieve_user_by_username(&user_data.username)
+        .await?
+        .ok_or(Error::Unauthorized)?;
 
     match verify(&user_data.password, &user.password_hash).map_err(Error::Bcrypt)? {
         true => (),
@@ -49,4 +47,22 @@ pub(crate) async fn register(
     let token = encode_jwt(&user, &state.secret)?;
 
     Ok(Json(response::Login::new(&user.username, &token)))
+}
+
+pub(crate) async fn get(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<impl IntoResponse, Error> {
+    let username = state.get_user_by_id(id).await?.ok_or(Error::Unauthorized)?;
+
+    Ok(Json(username))
+}
+pub(crate) async fn update_password(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthorizedUser>,
+    Json(new_password): Json<String>,
+) -> Result<impl IntoResponse, Error> {
+    state.reset_password(&user.username, &new_password).await?;
+
+    Ok(Json("Password reset successfully"))
 }
