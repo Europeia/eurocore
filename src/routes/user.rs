@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
+use crate::types::request;
 use crate::types::response;
 use crate::utils::auth::{encode_jwt, AuthorizedUser};
 
@@ -57,12 +58,15 @@ pub(crate) async fn get(
 
     Ok(Json(response::User::new(id, &username)))
 }
+
 pub(crate) async fn update_password(
     State(state): State<AppState>,
     Extension(user): Extension<AuthorizedUser>,
-    Json(new_password): Json<String>,
+    Json(params): Json<request::UpdatePasswordData>,
 ) -> Result<impl IntoResponse, Error> {
-    state.update_password(&user.username, &new_password).await?;
+    state
+        .update_password(&user.username, &params.new_password)
+        .await?;
 
     Ok(Json("Password reset successfully"))
 }
