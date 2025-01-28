@@ -55,6 +55,21 @@ impl Telegram {
 }
 
 #[derive(Serialize, Debug)]
+pub(crate) struct User {
+    id: i32,
+    username: String,
+}
+
+impl User {
+    pub(crate) fn new(id: i32, username: &str) -> Self {
+        Self {
+            id,
+            username: username.to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Debug)]
 pub(crate) struct Login {
     username: String,
     token: String,

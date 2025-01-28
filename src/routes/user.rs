@@ -55,7 +55,7 @@ pub(crate) async fn get(
 ) -> Result<impl IntoResponse, Error> {
     let username = state.get_user_by_id(id).await?.ok_or(Error::Unauthorized)?;
 
-    Ok(Json(username))
+    Ok(Json(response::User::new(id, &username)))
 }
 pub(crate) async fn update_password(
     State(state): State<AppState>,
