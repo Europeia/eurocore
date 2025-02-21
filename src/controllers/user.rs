@@ -1,13 +1,11 @@
 use crate::core::error::{self, Error};
 use crate::core::state::AppState;
-use crate::types::response::User;
 use crate::types::user::Claims;
-use crate::types::{response, AuthorizedUser, Username};
+use crate::types::{AuthorizedUser, Username};
 use axum::body::Body;
-use axum::extract::{Json, Request, State};
-use axum::http::{header, Response, StatusCode};
+use axum::extract::{Request, State};
+use axum::http::{header, Response};
 use axum::middleware::Next;
-use axum::response::IntoResponse;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation};
 use regex::Regex;

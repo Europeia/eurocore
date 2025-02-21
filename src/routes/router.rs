@@ -2,7 +2,6 @@ use crate::controllers;
 use crate::core::error;
 use crate::core::state::AppState;
 use crate::routes::{admin, dispatch, nations, queue, rmbpost, telegram, user};
-use crate::utils;
 use axum::error_handling::HandleErrorLayer;
 use axum::routing::patch;
 use axum::{

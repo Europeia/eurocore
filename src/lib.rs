@@ -9,7 +9,6 @@ pub(crate) mod workers;
 
 use config::Config;
 use sqlx::postgres::PgPoolOptions;
-use std::collections::HashMap;
 use std::time::Duration;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;

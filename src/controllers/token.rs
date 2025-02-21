@@ -1,5 +1,4 @@
 use crate::token::store::TokenStore;
-use axum::extract::Request;
 
 pub(crate) struct TokenController<T: TokenStore> {
     token_store: T,

@@ -5,8 +5,6 @@ use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
 use crate::ns::telegram;
 use crate::ns::{dispatch, rmbpost};
 use crate::types::response;
-use crate::types::response::User;
-use crate::types::{AuthorizedUser, Username};
 use serde::Serialize;
 use sqlx::postgres::{PgPool, PgRow};
 use sqlx::types::Json;
