@@ -10,12 +10,17 @@ use crate::types::{AuthorizedUser, Username};
 #[instrument(skip_all)]
 pub(crate) async fn change_user_password(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Path(id): Path<i32>,
     Json(params): Json<request::UpdatePasswordData>,
 ) -> Result<impl IntoResponse, Error> {
-    if !user.claims.contains(&"admin".to_string()) {
-        return Err(Error::Unauthorized);
+    match user {
+        Some(user) => {
+            if !user.claims.contains(&"admin".to_string()) {
+                return Err(Error::Unauthorized);
+            }
+        }
+        None => return Err(Error::Unauthorized),
     }
 
     let username: Username = match state.get_user_by_id(id).await {

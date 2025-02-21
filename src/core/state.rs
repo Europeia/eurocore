@@ -1,9 +1,4 @@
-use serde::Serialize;
-use sqlx::postgres::{PgPool, PgRow};
-use sqlx::types::Json;
-use sqlx::Row;
-use tokio::sync::{mpsc, oneshot};
-
+use crate::controllers::user::UserController;
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
 use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
@@ -11,6 +6,11 @@ use crate::ns::telegram;
 use crate::ns::{dispatch, rmbpost};
 use crate::types::response;
 use crate::types::{AuthorizedUser, Username};
+use serde::Serialize;
+use sqlx::postgres::{PgPool, PgRow};
+use sqlx::types::Json;
+use sqlx::Row;
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -21,6 +21,7 @@ pub(crate) struct AppState {
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
     rmbpost_sender: mpsc::Sender<rmbpost::Command>,
     username_re: regex::Regex,
+    pub(crate) user_controller: UserController,
 }
 
 impl AppState {
@@ -286,39 +287,6 @@ impl AppState {
 
     fn hash(&self, value: &str) -> Result<String, Error> {
         bcrypt::hash(value, 12).map_err(Error::Bcrypt)
-    }
-
-    pub(crate) async fn register_user(
-        &self,
-        username: &str,
-        password_hash: &str,
-    ) -> Result<AuthorizedUser, Error> {
-        if !self.username_re.is_match(username) {
-            return Err(Error::InvalidUsername);
-        }
-
-        let id: i32 = match sqlx::query(
-            "INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id;",
-        )
-        .bind(username)
-        .bind(password_hash)
-        .map(|row: PgRow| row.get("id"))
-        .fetch_one(&self.pool)
-        .await
-        {
-            Ok(id) => id,
-            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-                return Err(Error::UserAlreadyExists)
-            }
-            Err(e) => return Err(Error::Sql(e)),
-        };
-
-        Ok(AuthorizedUser {
-            id,
-            username: username.to_string(),
-            password_hash: password_hash.to_string(),
-            claims: Vec::new(),
-        })
     }
 
     pub(crate) async fn update_password(

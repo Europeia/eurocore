@@ -1,3 +1,4 @@
+use crate::controllers;
 use crate::core::error;
 use crate::core::state::AppState;
 use crate::routes::{admin, dispatch, nations, queue, rmbpost, telegram, user};
@@ -30,49 +31,35 @@ pub(crate) async fn routes(state: AppState) -> Router {
         state.client.get_rmbpost_nation_names().await.join(","),
     ));
 
-    let authorized_routes = Router::new()
-        .route("/dispatches", post(dispatch::post))
-        .route(
-            "/dispatches/{id}",
-            put(dispatch::put).delete(dispatch::delete),
-        )
-        .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
-            state.clone(),
-            utils::auth::authorize,
-        )));
-
     // /dispatches/...
     let dispatch_router = Router::new()
-        .route("/dispatches", get(dispatch::get_all))
-        .route("/dispatches/{id}", get(dispatch::get))
-        .merge(authorized_routes)
-        .route_layer(SetResponseHeaderLayer::overriding(
-            HeaderName::from_static("allowed-nations"),
-            HeaderValue::from_static(dispatch_nations),
-        ));
+        .route("/dispatches", get(dispatch::get_all).post(dispatch::post))
+        .route(
+            "/dispatches/{id}",
+            get(dispatch::get)
+                .put(dispatch::put)
+                .delete(dispatch::delete),
+        )
+        .route_layer(
+            ServiceBuilder::new().layer(SetResponseHeaderLayer::if_not_present(
+                HeaderName::from_static("dispatch-nations"),
+                HeaderValue::from_static(dispatch_nations),
+            )),
+        );
 
     // /telegrams/...
-    let telegram_router = Router::new()
-        .route(
-            "/telegrams",
-            get(telegram::get)
-                .post(telegram::post)
-                .delete(telegram::delete),
-        )
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            utils::auth::authorize,
-        ));
+    let telegram_router = Router::new().route(
+        "/telegrams",
+        get(telegram::get)
+            .post(telegram::post)
+            .delete(telegram::delete),
+    );
 
     // /rmbposts/...
     let rmbpost_router = Router::new()
         .route("/rmbposts", post(rmbpost::post))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            utils::auth::authorize,
-        ))
-        .route_layer(SetResponseHeaderLayer::overriding(
-            HeaderName::from_static("allowed-nations"),
+        .route_layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("rmbpost-nations"),
             HeaderValue::from_static(rmbpost_nations),
         ));
 
@@ -87,25 +74,12 @@ pub(crate) async fn routes(state: AppState) -> Router {
         get(nations::dispatches::get),
     );
 
-    let authorized_user_routes = Router::new()
-        .route(
-            "/users/me/password",
-            patch(user::update_password).route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                utils::auth::authorize,
-            )),
-        )
-        .route("/users/{id}/password", patch(admin::change_user_password))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            utils::auth::authorize,
-        ));
-
     // /users/...
     let user_router = Router::new()
         .route("/users/{id}", get(user::get))
         .route("/users/username/{username}", get(user::get_by_username))
-        .merge(authorized_user_routes);
+        .route("/users/me/password", patch(user::update_password))
+        .route("/users/{id}/password", patch(admin::change_user_password));
 
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
@@ -118,9 +92,13 @@ pub(crate) async fn routes(state: AppState) -> Router {
         .merge(queue_router)
         .merge(nation_router)
         .merge(user_router)
-        .with_state(state)
+        .with_state(state.clone())
         .route_layer(
             ServiceBuilder::new()
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    controllers::user::authenticate,
+                ))
                 .layer(
                     TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
                         let matched_path = request
@@ -148,7 +126,10 @@ pub(crate) async fn routes(state: AppState) -> Router {
                             Method::DELETE,
                         ])
                         .allow_origin(cors::Any)
-                        .expose_headers([HeaderName::from_str("allowed-nations").unwrap()]),
+                        .expose_headers([
+                            HeaderName::from_static("dispatch-nations"),
+                            HeaderName::from_static("rmbpost-nations"),
+                        ]),
                 ),
         )
 }

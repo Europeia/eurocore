@@ -64,6 +64,8 @@ pub enum Error {
     Header(#[from] axum::http::header::InvalidHeaderValue),
     #[error("Invalid username")]
     InvalidUsername,
+    #[error("Invalid password: {0}")]
+    InvalidPassword(String),
     #[error("Invalid header name: {0}")]
     InvalidHeaderName(#[from] InvalidHeaderName),
 }
@@ -96,6 +98,7 @@ impl IntoResponse for Error {
             Error::JobNotFound => (StatusCode::NOT_FOUND, "Job not found"),
             Error::Header(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Invalid header value"),
             Error::InvalidUsername => (StatusCode::BAD_REQUEST, "Invalid username"),
+            Error::InvalidPassword(_) => (StatusCode::BAD_REQUEST, "Invalid password"),
             Error::InvalidHeaderName(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Invalid header name")
             }

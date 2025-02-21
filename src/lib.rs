@@ -1,6 +1,8 @@
+pub(crate) mod controllers;
 pub(crate) mod core;
 pub(crate) mod ns;
 pub(crate) mod routes;
+pub(crate) mod token;
 pub(crate) mod types;
 pub(crate) mod utils;
 pub(crate) mod workers;
