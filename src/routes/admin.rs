@@ -23,7 +23,7 @@ pub(crate) async fn change_user_password(
         None => return Err(Error::Unauthorized),
     }
 
-    let username: Username = match state.get_user_by_id(id).await {
+    let username: Username = match state.user_controller.get_username_by_id(id).await {
         Ok(Some(user)) => user,
         Ok(None) => return Err(Error::InvalidUsername),
         Err(e) => return Err(e),

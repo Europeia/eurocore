@@ -40,7 +40,10 @@ impl UserController {
         })
     }
 
-    async fn get_user_by_username(&self, username: &str) -> Result<Option<AuthorizedUser>, Error> {
+    pub(crate) async fn get_user_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<AuthorizedUser>, Error> {
         match sqlx::query(
             "SELECT
             users.id,
@@ -69,7 +72,7 @@ impl UserController {
         }
     }
 
-    async fn get_username_by_id(&self, id: i32) -> Result<Option<Username>, Error> {
+    pub(crate) async fn get_username_by_id(&self, id: i32) -> Result<Option<Username>, Error> {
         match sqlx::query("SELECT username FROM users WHERE id = $1")
             .bind(id)
             .map(|row: PgRow| row.get("username"))
@@ -204,6 +207,7 @@ pub(crate) async fn authenticate(
     let token_data = decode_jwt(token.into(), &state.secret)?;
 
     let user = state
+        .user_controller
         .get_user_by_username(&token_data.claims.sub)
         .await?
         .ok_or_else(|| Error::InvalidUsername)?;

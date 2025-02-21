@@ -44,7 +44,8 @@ pub(crate) async fn get(
     Path(id): Path<i32>,
 ) -> Result<impl IntoResponse, Error> {
     let username = state
-        .get_user_by_id(id)
+        .user_controller
+        .get_username_by_id(id)
         .await?
         .ok_or(Error::InvalidUsername)?;
 
@@ -55,7 +56,11 @@ pub(crate) async fn get_by_username(
     State(state): State<AppState>,
     Path(username): Path<String>,
 ) -> Result<impl IntoResponse, Error> {
-    let user = match state.get_user_by_username(&username).await? {
+    let user = match state
+        .user_controller
+        .get_user_by_username(&username)
+        .await?
+    {
         Some(user) => user,
         None => return Err(Error::Unauthorized),
     };
@@ -65,9 +70,14 @@ pub(crate) async fn get_by_username(
 
 pub(crate) async fn update_password(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Json(params): Json<request::UpdatePasswordData>,
 ) -> Result<impl IntoResponse, Error> {
+    let user = match user {
+        Some(user) => user,
+        None => return Err(Error::Unauthorized),
+    };
+
     state
         .update_password(&user.username, &params.new_password)
         .await?;
