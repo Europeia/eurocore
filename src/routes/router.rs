@@ -9,10 +9,9 @@ use axum::{
     extract::{MatchedPath, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode},
     middleware,
-    routing::{get, post, put},
+    routing::{get, post},
     Router,
 };
-use std::str::FromStr;
 use std::time::Duration;
 use tower::ServiceBuilder;
 use tower_http::{
