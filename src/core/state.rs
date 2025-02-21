@@ -18,7 +18,6 @@ pub(crate) struct AppState {
     pub(crate) telegram_sender: mpsc::Sender<telegram::Command>,
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
     rmbpost_sender: mpsc::Sender<rmbpost::Command>,
-    username_re: regex::Regex,
     pub(crate) user_controller: UserController,
 }
 
@@ -37,7 +36,6 @@ impl AppState {
             telegram_sender,
             dispatch_sender,
             rmbpost_sender,
-            username_re: regex::Regex::new(r"^[a-zA-Z0-9_-]{3,20}$")?,
             user_controller: UserController::new(pool, secret)?,
         })
     }
