@@ -1,8 +1,8 @@
 use crate::core::error::{self, Error};
 use crate::core::state::AppState;
 use crate::types::response::User;
+use crate::types::user::Claims;
 use crate::types::{response, AuthorizedUser, Username};
-use crate::utils::auth::{decode_jwt, Claims};
 use axum::body::Body;
 use axum::extract::{Json, Request, State};
 use axum::http::{header, Response, StatusCode};
@@ -149,6 +149,20 @@ impl UserController {
         Ok((user, token))
     }
 
+    pub(crate) async fn update_password(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<(), Error> {
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE username = $2;")
+            .bind(self.hash(password)?)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
     fn hash(&self, value: &str) -> Result<String, Error> {
         bcrypt::hash(&value, 12).map_err(Error::Bcrypt)
     }
@@ -204,7 +218,7 @@ pub(crate) async fn authenticate(
 
     let (_bearer, token) = (header.next(), header.next().unwrap_or_default());
 
-    let token_data = decode_jwt(token.into(), &state.secret)?;
+    let token_data = state.user_controller.decode_jwt(token.into())?;
 
     let user = state
         .user_controller

@@ -5,6 +5,7 @@ use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
 use crate::ns::telegram;
 use crate::ns::{dispatch, rmbpost};
 use crate::types::response;
+use crate::types::response::User;
 use crate::types::{AuthorizedUser, Username};
 use serde::Serialize;
 use sqlx::postgres::{PgPool, PgRow};
@@ -15,7 +16,6 @@ use tokio::sync::{mpsc, oneshot};
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) pool: PgPool,
-    pub(crate) secret: String,
     pub(crate) client: Client,
     pub(crate) telegram_sender: mpsc::Sender<telegram::Command>,
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
@@ -34,13 +34,13 @@ impl AppState {
         rmbpost_sender: mpsc::Sender<rmbpost::Command>,
     ) -> Result<Self, ConfigError> {
         Ok(AppState {
-            pool,
-            secret,
+            pool: pool.clone(),
             client,
             telegram_sender,
             dispatch_sender,
             rmbpost_sender,
             username_re: regex::Regex::new(r"^[a-zA-Z0-9_-]{3,20}$")?,
+            user_controller: UserController::new(pool, secret)?,
         })
     }
 
@@ -283,24 +283,6 @@ impl AppState {
         };
 
         Ok(status)
-    }
-
-    fn hash(&self, value: &str) -> Result<String, Error> {
-        bcrypt::hash(value, 12).map_err(Error::Bcrypt)
-    }
-
-    pub(crate) async fn update_password(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<(), Error> {
-        sqlx::query("UPDATE users SET password_hash = $1 WHERE username = $2;")
-            .bind(self.hash(password)?)
-            .bind(username)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
     }
 }
 

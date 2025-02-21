@@ -2,14 +2,12 @@ use axum::extract::{Extension, Path, State};
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::Json;
-use bcrypt::verify;
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::types::request;
 use crate::types::response;
 use crate::types::AuthorizedUser;
-use crate::utils::auth::encode_jwt;
 
 pub(crate) async fn register(
     State(state): State<AppState>,
@@ -79,6 +77,7 @@ pub(crate) async fn update_password(
     };
 
     state
+        .user_controller
         .update_password(&user.username, &params.new_password)
         .await?;
 

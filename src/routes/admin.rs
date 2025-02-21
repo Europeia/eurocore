@@ -30,6 +30,7 @@ pub(crate) async fn change_user_password(
     };
 
     state
+        .user_controller
         .update_password(&username, &params.new_password)
         .await?;
 
