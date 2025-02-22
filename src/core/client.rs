@@ -159,14 +159,14 @@ impl Client {
         };
 
         match &mut dispatch.action {
-            Action::Add { ref mut text, .. } => {
+            Action::Add { text, .. } => {
                 *text = self.encode(text.as_str());
 
                 self.ratelimiter
                     .acquire_for(Target::Restricted(&dispatch.nation))
                     .await
             }
-            Action::Edit { ref mut text, .. } => {
+            Action::Edit { text, .. } => {
                 *text = self.encode(text.as_str());
 
                 self.ratelimiter.acquire_for(Target::Standard).await
