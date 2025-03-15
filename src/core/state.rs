@@ -1,3 +1,4 @@
+use crate::controllers::dispatch::DispatchController;
 use crate::controllers::user::UserController;
 use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
@@ -6,9 +7,9 @@ use crate::ns::telegram;
 use crate::ns::{dispatch, rmbpost};
 use crate::types::response;
 use serde::Serialize;
+use sqlx::Row;
 use sqlx::postgres::{PgPool, PgRow};
 use sqlx::types::Json;
-use sqlx::Row;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone, Debug)]
@@ -19,6 +20,7 @@ pub(crate) struct AppState {
     pub(crate) dispatch_sender: mpsc::Sender<dispatch::Command>,
     rmbpost_sender: mpsc::Sender<rmbpost::Command>,
     pub(crate) user_controller: UserController,
+    pub(crate) dispatch_controller: DispatchController,
 }
 
 impl AppState {
@@ -36,184 +38,9 @@ impl AppState {
             telegram_sender,
             dispatch_sender,
             rmbpost_sender,
-            user_controller: UserController::new(pool, secret)?,
+            user_controller: UserController::new(pool.clone(), secret)?,
+            dispatch_controller: DispatchController::new(pool),
         })
-    }
-
-    pub(crate) async fn queue_dispatch<T: Serialize>(
-        &self,
-        action: &str,
-        payload: Json<T>,
-    ) -> Result<response::DispatchStatus, Error> {
-        let status = sqlx::query(
-            "INSERT INTO dispatch_queue (type, payload, status) VALUES ($1, $2, 'queued')
-            RETURNING
-                id,
-                type AS action,
-                status,
-                dispatch_id,
-                error,
-                created_at,
-                modified_at;",
-        )
-        .bind(action)
-        .bind(payload)
-        .map(map_dispatch_status)
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(status)
-    }
-
-    pub(crate) async fn get_dispatch_status(
-        &self,
-        id: i32,
-    ) -> Result<response::DispatchStatus, Error> {
-        let status = match sqlx::query(
-            "SELECT
-                id,
-                type AS action,
-                status,
-                dispatch_id,
-                error,
-                created_at,
-                modified_at
-            FROM dispatch_queue
-            WHERE id = $1;",
-        )
-        .bind(id)
-        .map(map_dispatch_status)
-        .fetch_one(&self.pool)
-        .await
-        {
-            Ok(status) => status,
-            Err(sqlx::Error::RowNotFound) => return Err(Error::JobNotFound),
-            Err(e) => return Err(Error::Sql(e)),
-        };
-
-        Ok(status)
-    }
-
-    pub(crate) async fn get_dispatch_nation(&self, dispatch_id: i32) -> Result<String, Error> {
-        let nation: String = match sqlx::query(
-            "SELECT nation FROM dispatches WHERE dispatch_id = $1 AND is_active = TRUE;",
-        )
-        .bind(dispatch_id)
-        .map(|row: PgRow| row.get("nation"))
-        .fetch_one(&self.pool)
-        .await
-        {
-            Ok(nation) => nation,
-            Err(sqlx::Error::RowNotFound) => return Err(Error::DispatchNotFound),
-            Err(e) => return Err(Error::Sql(e)),
-        };
-
-        Ok(nation)
-    }
-
-    pub(crate) async fn get_dispatch(self, dispatch_id: i32) -> Result<response::Dispatch, Error> {
-        let dispatch = match sqlx::query(
-            "SELECT
-                dispatches.dispatch_id,
-                dispatches.nation,
-                dispatch_content.category,
-                dispatch_content.subcategory,
-                dispatch_content.title,
-                dispatch_content.text,
-                dispatch_content.created_by,
-                dispatch_content.created_at as created_at
-            FROM dispatches
-            JOIN
-                dispatch_content ON dispatch_content.dispatch_id = dispatches.id
-            WHERE dispatches.dispatch_id = $1
-            AND dispatches.is_active = TRUE;",
-        )
-        .bind(dispatch_id)
-        .map(map_dispatch)
-        .fetch_one(&self.pool)
-        .await
-        {
-            Ok(dispatch) => dispatch,
-            Err(sqlx::Error::RowNotFound) => return Err(Error::DispatchNotFound),
-            Err(e) => return Err(Error::Sql(e)),
-        };
-
-        Ok(dispatch)
-    }
-
-    async fn get_all_dispatches(&self) -> Result<Vec<response::Dispatch>, Error> {
-        let dispatches = sqlx::query(
-            "SELECT
-                dispatches.dispatch_id,
-                dispatches.nation,
-                dispatch_content.category,
-                dispatch_content.subcategory,
-                dispatch_content.title,
-                dispatch_content.text,
-                dispatch_content.created_by,
-                dispatch_content.created_at as created_at
-            FROM dispatches
-            JOIN
-                dispatch_content ON dispatch_content.dispatch_id = dispatches.id
-            WHERE dispatch_content.id = (
-                SELECT id FROM dispatch_content
-              WHERE dispatch_content.dispatch_id = dispatches.id
-              ORDER BY dispatch_content.id DESC
-              LIMIT 1
-            )
-            AND dispatches.is_active = TRUE;",
-        )
-        .map(map_dispatch)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(dispatches)
-    }
-
-    async fn get_dispatches_by_nation(
-        &self,
-        nation: String,
-    ) -> Result<Vec<response::Dispatch>, Error> {
-        let dispatches = sqlx::query(
-            "SELECT
-                dispatches.dispatch_id,
-                dispatches.nation,
-                dispatch_content.category,
-                dispatch_content.subcategory,
-                dispatch_content.title,
-                dispatch_content.text,
-                dispatch_content.created_by,
-                dispatch_content.created_at as created_at
-            FROM dispatches
-            JOIN
-                dispatch_content ON dispatch_content.dispatch_id = dispatches.id
-            WHERE dispatch_content.id = (
-                SELECT id FROM dispatch_content
-              WHERE dispatch_content.dispatch_id = dispatches.id
-              ORDER BY dispatch_content.id DESC
-              LIMIT 1
-            )
-            AND dispatches.is_active = TRUE
-            AND dispatches.nation = $1;",
-        )
-        .bind(nation)
-        .map(map_dispatch)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(dispatches)
-    }
-
-    pub(crate) async fn get_dispatches(
-        self,
-        nation: Option<String>,
-    ) -> Result<Vec<response::Dispatch>, Error> {
-        let dispatches = match nation {
-            Some(nation) => self.get_dispatches_by_nation(nation).await?,
-            None => self.get_all_dispatches().await?,
-        };
-
-        Ok(dispatches)
     }
 
     pub(crate) async fn queue_rmbpost(

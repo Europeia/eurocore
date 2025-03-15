@@ -29,14 +29,14 @@ pub(crate) async fn get(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<impl IntoResponse, Error> {
-    let dispatch = state.get_dispatch(id).await?;
+    let dispatch = state.dispatch_controller.get_one(id).await?;
 
     Ok(Json(dispatch))
 }
 
 #[instrument(skip(state))]
 pub(crate) async fn get_all(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
-    let dispatches = state.get_dispatches(None).await?;
+    let dispatches = state.dispatch_controller.get(None).await?;
 
     Ok(Json(dispatches))
 }
@@ -59,7 +59,8 @@ pub(crate) async fn post(
     };
 
     let job = state
-        .queue_dispatch("add", sqlx::types::Json(params.clone()))
+        .dispatch_controller
+        .queue("add", sqlx::types::Json(params.clone()))
         .await?;
 
     let dispatch = IntermediateDispatch::add(job.id, user.username, params)?;
@@ -93,10 +94,11 @@ pub(crate) async fn put(
         None => return Err(Error::Unauthorized),
     };
 
-    let nation = state.get_dispatch_nation(id).await?;
+    let nation = state.dispatch_controller.get_nation(id).await?;
 
     let job = state
-        .queue_dispatch("edit", sqlx::types::Json(params.clone()))
+        .dispatch_controller
+        .queue("edit", sqlx::types::Json(params.clone()))
         .await?;
 
     let dispatch = IntermediateDispatch::edit(job.id, user.username, id, nation, params)?;
@@ -129,10 +131,11 @@ pub(crate) async fn delete(
         None => return Err(Error::Unauthorized),
     };
 
-    let nation = state.get_dispatch_nation(id).await?;
+    let nation = state.dispatch_controller.get_nation(id).await?;
 
     let job = state
-        .queue_dispatch("remove", sqlx::types::Json(id))
+        .dispatch_controller
+        .queue("remove", sqlx::types::Json(id))
         .await?;
 
     let dispatch = IntermediateDispatch::delete(job.id, user.username, id, nation);
