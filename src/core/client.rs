@@ -90,13 +90,10 @@ impl Client {
             }
         }
 
-        // do i need this? return to this at some point
-        let query = serde_urlencoded::to_string(telegram)?;
-
         tracing::debug!("Sending telegram");
         self.client
             .get(&self.url)
-            .query(&query)
+            .query(&telegram)
             .send()
             .await?
             .error_for_status()?;
