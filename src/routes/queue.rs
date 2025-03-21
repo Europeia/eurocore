@@ -20,7 +20,7 @@ pub(crate) async fn rmbpost(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<impl IntoResponse, Error> {
-    let status = state.get_rmbpost_status(id).await?;
+    let status = state.rmbpost_controller.get_status(id).await?;
 
     Ok(Json(status))
 }
