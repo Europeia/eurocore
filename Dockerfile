@@ -1,6 +1,6 @@
 ARG APP_NAME=eurocore
 
-FROM lukemathwalker/cargo-chef:latest-rust-alpine AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.85 AS chef
 WORKDIR /app
 
 RUN apt update && apt install lld clang -y
