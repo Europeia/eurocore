@@ -4,4 +4,4 @@ pub(crate) mod dispatch;
 pub(crate) mod rmbpost;
 pub(crate) mod telegram;
 
-const PERIOD: Duration = Duration::from_secs(2);
+const PERIOD: Duration = Duration::from_millis(250);

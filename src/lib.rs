@@ -1,13 +1,14 @@
+pub(crate) mod controllers;
 pub(crate) mod core;
 pub(crate) mod ns;
 pub(crate) mod routes;
+pub(crate) mod token;
 pub(crate) mod types;
 pub(crate) mod utils;
 pub(crate) mod workers;
 
 use config::Config;
 use sqlx::postgres::PgPoolOptions;
-use std::collections::HashMap;
 use std::time::Duration;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;

@@ -1,6 +1,4 @@
-use crate::core::error::Error;
 use serde::Serialize;
-use std::marker::PhantomData;
 
 enum Command {
     Dispatch,

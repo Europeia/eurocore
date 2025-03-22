@@ -1,7 +1,7 @@
-use axum::extract::{Json, Path, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
-use axum::response::IntoResponse;
 use axum::Extension;
+use axum::extract::{Json, Path, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::IntoResponse;
 use sqlx;
 use tokio::sync::oneshot;
 use tracing::instrument;
@@ -9,8 +9,8 @@ use tracing::instrument;
 use crate::core::error::Error;
 use crate::core::state::AppState;
 use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch, Response};
-use crate::types::response::DispatchStatus;
 use crate::types::AuthorizedUser;
+use crate::types::response::DispatchStatus;
 
 #[instrument(skip_all)]
 pub(crate) async fn head(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
@@ -29,14 +29,14 @@ pub(crate) async fn get(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<impl IntoResponse, Error> {
-    let dispatch = state.get_dispatch(id).await?;
+    let dispatch = state.dispatch_controller.get_one(id).await?;
 
     Ok(Json(dispatch))
 }
 
 #[instrument(skip(state))]
 pub(crate) async fn get_all(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
-    let dispatches = state.get_dispatches(None).await?;
+    let dispatches = state.dispatch_controller.get(None).await?;
 
     Ok(Json(dispatches))
 }
@@ -44,15 +44,23 @@ pub(crate) async fn get_all(State(state): State<AppState>) -> Result<impl IntoRe
 #[instrument(skip(state, user))]
 pub(crate) async fn post(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Json(params): Json<NewDispatch>,
 ) -> Result<impl IntoResponse, Error> {
-    if !user.claims.contains(&"dispatches.create".to_string()) {
-        return Err(Error::Unauthorized);
-    }
+    let user = match user {
+        Some(user) => {
+            if !user.claims.contains(&"dispatches.create".to_string()) {
+                return Err(Error::Unauthorized);
+            }
+
+            user
+        }
+        None => return Err(Error::Unauthorized),
+    };
 
     let job = state
-        .queue_dispatch("add", sqlx::types::Json(params.clone()))
+        .dispatch_controller
+        .queue("add", sqlx::types::Json(params.clone()))
         .await?;
 
     let dispatch = IntermediateDispatch::add(job.id, user.username, params)?;
@@ -71,18 +79,26 @@ pub(crate) async fn post(
 #[instrument(skip(state, user))]
 pub(crate) async fn put(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Path(id): Path<i32>,
     Json(params): Json<EditDispatch>,
 ) -> Result<impl IntoResponse, Error> {
-    if !user.claims.contains(&"dispatches.edit".to_string()) {
-        return Err(Error::Unauthorized);
-    }
+    let user = match user {
+        Some(user) => {
+            if !user.claims.contains(&"dispatches.edit".to_string()) {
+                return Err(Error::Unauthorized);
+            }
 
-    let nation = state.get_dispatch_nation(id).await?;
+            user
+        }
+        None => return Err(Error::Unauthorized),
+    };
+
+    let nation = state.dispatch_controller.get_nation(id).await?;
 
     let job = state
-        .queue_dispatch("edit", sqlx::types::Json(params.clone()))
+        .dispatch_controller
+        .queue("edit", sqlx::types::Json(params.clone()))
         .await?;
 
     let dispatch = IntermediateDispatch::edit(job.id, user.username, id, nation, params)?;
@@ -101,17 +117,25 @@ pub(crate) async fn put(
 #[instrument(skip(state, user))]
 pub(crate) async fn delete(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Path(id): Path<i32>,
 ) -> Result<impl IntoResponse, Error> {
-    if !user.claims.contains(&"dispatches.delete".to_string()) {
-        return Err(Error::Unauthorized);
-    }
+    let user = match user {
+        Some(user) => {
+            if !user.claims.contains(&"dispatches.delete".to_string()) {
+                return Err(Error::Unauthorized);
+            }
 
-    let nation = state.get_dispatch_nation(id).await?;
+            user
+        }
+        None => return Err(Error::Unauthorized),
+    };
+
+    let nation = state.dispatch_controller.get_nation(id).await?;
 
     let job = state
-        .queue_dispatch("remove", sqlx::types::Json(id))
+        .dispatch_controller
+        .queue("remove", sqlx::types::Json(id))
         .await?;
 
     let dispatch = IntermediateDispatch::delete(job.id, user.username, id, nation);

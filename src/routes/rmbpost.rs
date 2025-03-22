@@ -3,20 +3,25 @@ use crate::core::state::AppState;
 use crate::ns::rmbpost::NewRmbPost;
 use crate::types::AuthorizedUser;
 use axum::extract::State;
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
 
 pub(crate) async fn post(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Json(params): Json<NewRmbPost>,
 ) -> Result<impl IntoResponse, Error> {
-    if !user.claims.contains(&"rmbposts.create".to_string()) {
-        return Err(Error::Unauthorized);
+    match user {
+        Some(user) => {
+            if !user.claims.contains(&"rmbposts.create".to_string()) {
+                return Err(Error::Unauthorized);
+            }
+        }
+        None => return Err(Error::Unauthorized),
     }
 
-    let status = state.queue_rmbpost(params.clone()).await?;
+    let status = state.rmbpost_controller.queue(params.clone()).await?;
 
     Ok((
         StatusCode::ACCEPTED,

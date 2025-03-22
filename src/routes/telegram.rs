@@ -13,10 +13,15 @@ use crate::types::AuthorizedUser;
 #[instrument(skip(state, user))]
 pub(crate) async fn get(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
 ) -> Result<Json<HashMap<String, Vec<response::Telegram>>>, Error> {
-    if !user.claims.contains(&"telegrams.read".to_string()) {
-        return Err(Error::Unauthorized);
+    match user {
+        Some(user) => {
+            if !user.claims.contains(&"telegrams.read".to_string()) {
+                return Err(Error::Unauthorized);
+            }
+        }
+        None => return Err(Error::Unauthorized),
     }
 
     let (tx, rx) = oneshot::channel();
@@ -43,11 +48,16 @@ pub(crate) async fn get(
 #[instrument(skip(state, user))]
 pub(crate) async fn post(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Json(params): Json<Vec<Params>>,
 ) -> Result<String, Error> {
-    if !user.claims.contains(&"telegrams.create".to_string()) {
-        return Err(Error::Unauthorized);
+    match user {
+        Some(user) => {
+            if !user.claims.contains(&"telegrams.create".to_string()) {
+                return Err(Error::Unauthorized);
+            }
+        }
+        None => return Err(Error::Unauthorized),
     }
 
     for param in params {
@@ -70,11 +80,16 @@ pub(crate) async fn post(
 #[instrument(skip(state, user))]
 pub(crate) async fn delete(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthorizedUser>,
+    Extension(user): Extension<Option<AuthorizedUser>>,
     Json(params): Json<Header>,
 ) -> Result<String, Error> {
-    if !user.claims.contains(&"telegrams.delete".to_string()) {
-        return Err(Error::Unauthorized);
+    match user {
+        Some(user) => {
+            if !user.claims.contains(&"telegrams.delete".to_string()) {
+                return Err(Error::Unauthorized);
+            }
+        }
+        None => return Err(Error::Unauthorized),
     }
 
     let (tx, rx) = oneshot::channel();
