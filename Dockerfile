@@ -1,16 +1,16 @@
 ARG APP_NAME=eurocore
 
-FROM lukemathwalker/cargo-chef:latest-rust-alpine AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.85 AS chef
 WORKDIR /app
 
 RUN apt update && apt install lld clang -y
 
-FROM chef as planner
+FROM chef AS planner
 COPY . .
 # Compute a lock-like file for our project
 RUN cargo chef prepare  --recipe-path recipe.json
 
-FROM chef as builder
+FROM chef AS builder
 ARG APP_NAME
 
 COPY --from=planner /app/recipe.json recipe.json
