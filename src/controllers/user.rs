@@ -4,7 +4,7 @@ use crate::types::user::Claims;
 use crate::types::{AuthorizedUser, Username};
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{header, Response};
+use axum::http::{Response, header};
 use axum::middleware::Next;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation};
@@ -111,7 +111,7 @@ impl UserController {
         {
             Ok(id) => id,
             Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-                return Err(Error::UserAlreadyExists)
+                return Err(Error::UserAlreadyExists);
             }
             Err(e) => return Err(Error::Sql(e)),
         };
@@ -234,6 +234,8 @@ fn map_user(row: PgRow) -> AuthorizedUser {
         id: row.get("id"),
         username: row.get("username"),
         password_hash: row.get("password_hash"),
-        claims: row.get("permissions"),
+        claims: row
+            .get::<Option<Vec<String>>, _>("permissions")
+            .unwrap_or_default(),
     }
 }
