@@ -1,6 +1,6 @@
 use crate::core::error::Error;
 use std::collections::{HashMap, VecDeque};
-use std::ops::Add;
+use std::ops::{Add, Mul};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
 use tracing;
@@ -82,12 +82,12 @@ pub(crate) struct Receiver {
     bucket_length: Duration,
     requests: VecDeque<Instant>,
     telegram_cooldown: Duration,
-    last_telegram: Option<Instant>,
+    telegrams: VecDeque<Instant>,
     recruitment_cooldown: Duration,
-    last_recruitment: Option<Instant>,
+    recruitment_telegrams: VecDeque<Instant>,
     restricted_action_cooldown: Duration,
     /// the last restrcted action performed by a given nation name, if any
-    last_restricted_action: HashMap<String, Instant>,
+    restricted_actions: HashMap<String, VecDeque<Instant>>,
 }
 
 impl Receiver {
@@ -105,24 +105,29 @@ impl Receiver {
             bucket_length,
             requests: VecDeque::with_capacity(max_requests),
             telegram_cooldown,
-            last_telegram: None,
+            telegrams: VecDeque::new(),
             recruitment_cooldown,
-            last_recruitment: None,
+            recruitment_telegrams: VecDeque::new(),
             restricted_action_cooldown,
-            last_restricted_action: HashMap::new(),
+            restricted_actions: HashMap::new(),
         }
     }
 
     /// remove expired requests from bucket
-    fn clean_bucket(&mut self) {
+    fn clean_buckets(&mut self) {
         let now = Instant::now();
 
-        while let Some(&request) = self.requests.front() {
-            if now.duration_since(request) > self.bucket_length {
-                self.requests.pop_front();
-            } else {
-                break;
-            }
+        self.requests
+            .retain(|v| now.duration_since(*v) < self.bucket_length);
+
+        self.telegrams
+            .retain(|v| now.duration_since(*v) < self.telegram_cooldown);
+
+        self.recruitment_telegrams
+            .retain(|v| now.duration_since(*v) < self.recruitment_cooldown);
+
+        for vec in self.restricted_actions.values_mut() {
+            vec.retain(|&request| now.duration_since(request) < self.restricted_action_cooldown);
         }
     }
 
@@ -158,16 +163,17 @@ impl Receiver {
     /// means that it does not take into account other limits that may prevent a recruitment telegram
     /// from being sent (e.g. the standard telegram rate limit).
     fn peek_recruitment(&mut self) -> Duration {
-        if let Some(last_request) = self.last_recruitment {
-            let now = Instant::now();
+        self.clean_buckets();
 
-            if now.duration_since(last_request) > self.recruitment_cooldown {
-                Duration::ZERO
-            } else {
-                self.recruitment_cooldown - now.duration_since(last_request)
-            }
-        } else {
+        if self.recruitment_telegrams.is_empty() {
             Duration::ZERO
+        } else {
+            self.recruitment_cooldown
+                .mul(self.recruitment_telegrams.len() as u32)
+                .saturating_sub(
+                    Instant::now()
+                        .saturating_duration_since(*self.recruitment_telegrams.front().unwrap()),
+                )
         }
     }
 
@@ -175,16 +181,16 @@ impl Receiver {
     /// means that it does not take into account other limits that may prevent a telegram
     /// from being sent (e.g. the restricted action rate limit).
     fn peek_telegram(&mut self) -> Duration {
-        if let Some(last_request) = self.last_telegram {
-            let now = Instant::now();
+        self.clean_buckets();
 
-            if now.duration_since(last_request) > self.telegram_cooldown {
-                Duration::ZERO
-            } else {
-                self.telegram_cooldown - now.duration_since(last_request)
-            }
-        } else {
+        if self.telegrams.is_empty() {
             Duration::ZERO
+        } else {
+            self.telegram_cooldown
+                .mul(self.telegrams.len() as u32)
+                .saturating_sub(
+                    Instant::now().saturating_duration_since(*self.telegrams.front().unwrap()),
+                )
         }
     }
 
@@ -192,13 +198,17 @@ impl Receiver {
     /// In this context, naive means that it does not take into account other limits that may
     /// prevent a restricted action from being performed (e.g. the standard rate limit).
     fn peek_restricted(&mut self, sender: &str) -> Duration {
-        if let Some(last_request) = self.last_restricted_action.get(sender) {
-            let now = Instant::now();
+        self.clean_buckets();
 
-            if now.duration_since(*last_request) > self.restricted_action_cooldown {
+        if let Some(bucket) = self.restricted_actions.get(sender) {
+            if bucket.is_empty() {
                 Duration::ZERO
             } else {
-                self.restricted_action_cooldown - now.duration_since(*last_request)
+                self.restricted_action_cooldown
+                    .mul(bucket.len() as u32)
+                    .saturating_sub(
+                        Instant::now().saturating_duration_since(*bucket.front().unwrap()),
+                    )
             }
         } else {
             Duration::ZERO
@@ -206,12 +216,13 @@ impl Receiver {
     }
 
     fn peek_standard(&mut self) -> Duration {
-        self.clean_bucket();
+        self.clean_buckets();
 
-        if self.requests.len() < self.max_requests {
+        if self.requests.is_empty() {
             Duration::ZERO
         } else {
             self.bucket_length
+                .mul((self.requests.len() / self.max_requests) as u32)
                 .saturating_sub(Instant::now().duration_since(*self.requests.front().unwrap()))
         }
     }
@@ -223,26 +234,32 @@ impl Receiver {
 
         match target {
             Target::RecruitmentTelegram { sender } => {
-                self.last_recruitment = Some(request_at);
+                self.recruitment_telegrams.push_back(request_at);
 
-                self.last_telegram = Some(request_at);
+                self.telegrams.push_back(request_at);
 
-                self.last_restricted_action
-                    .insert(sender.to_string(), request_at);
+                self.restricted_actions
+                    .entry(sender.to_string())
+                    .or_default()
+                    .push_back(request_at);
 
                 self.requests.push_back(request_at);
             }
             Target::Telegram { sender } => {
-                self.last_telegram = Some(request_at);
+                self.telegrams.push_back(request_at);
 
-                self.last_restricted_action
-                    .insert(sender.to_string(), request_at);
+                self.restricted_actions
+                    .entry(sender.to_string())
+                    .or_default()
+                    .push_back(request_at);
 
                 self.requests.push_back(request_at);
             }
             Target::Restricted { sender } => {
-                self.last_restricted_action
-                    .insert(sender.to_string(), request_at);
+                self.restricted_actions
+                    .entry(sender.to_string())
+                    .or_default()
+                    .push_back(request_at);
 
                 self.requests.push_back(request_at);
             }
@@ -333,9 +350,7 @@ mod tests {
         assert_eq!(limiter.acquire(Target::Standard), Ok(()));
         assert_eq!(limiter.peek(&Target::Standard), Duration::ZERO);
 
-        // Fill token bucket
         assert_eq!(limiter.acquire(Target::Standard), Ok(()));
-        // Should now be ratelimited
         let wait = limiter.peek(&Target::Standard);
         assert!(wait > Duration::ZERO);
     }
@@ -361,7 +376,7 @@ mod tests {
         let wait = limiter.peek(&Target::Telegram {
             sender: sender.clone(),
         });
-        assert!(wait >= Duration::from_secs(4)); // or 5 depending on Instant resolution
+        assert!(wait >= Duration::from_secs(4));
     }
 
     #[test]
@@ -376,11 +391,10 @@ mod tests {
             Ok(())
         );
 
-        // All cooldowns should now be in effect
         let wait = limiter.peek(&Target::RecruitmentTelegram {
             sender: sender.clone(),
         });
-        assert!(wait >= Duration::from_secs(14)); // Based on longest (recruitment = 15s)
+        assert!(wait >= Duration::from_secs(14));
     }
 
     #[test]
@@ -398,6 +412,6 @@ mod tests {
         let wait = limiter.peek(&Target::Restricted {
             sender: sender.clone(),
         });
-        assert!(wait >= Duration::from_secs(19)); // 20s cooldown
+        assert!(wait >= Duration::from_secs(19));
     }
 }
