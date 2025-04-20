@@ -1,47 +1,74 @@
+use crate::core::error::{ConfigError, Error};
+use crate::ns::telegram::{Command, Header, Operation, Params, Response, Telegram, TgType};
+use crate::sync::ratelimiter;
+use crate::sync::ratelimiter::Target;
+use crate::types::response;
+use reqwest::{self, ClientBuilder};
 use std::collections::{HashMap, VecDeque};
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::time::Duration;
+use tracing;
 
-use crate::core::client::Client;
-use crate::core::error::ConfigError;
-use crate::ns::telegram::{Command, Header, Operation, Params, Response, Telegram, TgType};
-use crate::types::response;
-use crate::utils::ratelimiter::Target;
-use crate::workers::PERIOD;
+const MAX_COOLDOWN: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
-pub(crate) struct TelegramClient {
-    client: Client,
-    client_key: String,
+struct Client {
+    url: String,
+    client: reqwest::Client,
+    key: String,
     recruitment_queue: VecDeque<Telegram>,
     standard_queue: VecDeque<Telegram>,
-
+    limiter: ratelimiter::Sender,
     rx: mpsc::Receiver<Command>,
 }
 
-impl TelegramClient {
-    pub(crate) fn new(
-        client: Client,
-        client_key: String,
+impl Client {
+    fn new(
+        user_agent: &str,
+        url: &str,
+        key: String,
+        limiter: ratelimiter::Sender,
         rx: mpsc::Receiver<Command>,
     ) -> Result<Self, ConfigError> {
+        let client = ClientBuilder::new().user_agent(user_agent).build()?;
+
         Ok(Self {
+            url: url.to_owned(),
             client,
-            client_key,
+            key,
             recruitment_queue: VecDeque::new(),
             standard_queue: VecDeque::new(),
+            limiter,
             rx,
         })
     }
 
-    fn queue(&mut self, params: Params) {
-        let telegram = Telegram::from_params(&self.client_key, params);
-
-        let queue = match telegram.tg_type {
-            TgType::Recruitment => &mut self.recruitment_queue,
-            TgType::Standard => &mut self.standard_queue,
+    fn process_command(&mut self, command: Command) {
+        let response = match command.operation {
+            Operation::Queue(telegram) => {
+                self.queue(telegram);
+                Response::Ok
+            }
+            Operation::Delete(header) => {
+                self.delete(header);
+                Response::Ok
+            }
+            Operation::List => Response::List(self.list()),
         };
 
-        queue.push_back(telegram);
+        if let Err(_) = command.tx.send(response) {
+            tracing::error!("failed to send response");
+        }
+    }
+
+    fn queue(&mut self, params: Params) {
+        let telegram = Telegram::from_params(&self.key, params);
+
+        match &telegram.tg_type {
+            TgType::Standard => self.standard_queue.push_back(telegram),
+            TgType::Recruitment => self.recruitment_queue.push_back(telegram),
+        }
     }
 
     fn delete(&mut self, header: Header) {
@@ -74,39 +101,36 @@ impl TelegramClient {
         response
     }
 
-    async fn send(&mut self) {
-        if let Some(telegram) = self.get_tg().await {
-            match self.client.send_telegram(telegram).await {
-                Ok(_) => {
-                    tracing::info!("Telegram sent");
-                }
-                Err(e) => {
-                    tracing::error!("Error sending telegram, {:?}", e);
-                }
-            };
+    async fn try_send(&mut self) {
+        if let Some(telegram) = self.get_telegram().await {
+            if let Err(e) = self.send(telegram).await {
+                tracing::error!("failed to send telegram: {}", e);
+            }
         }
     }
 
-    async fn get_tg(&mut self) -> Option<Telegram> {
-        for (index, tg) in self.recruitment_queue.iter().enumerate() {
+    async fn get_telegram(&mut self) -> Option<Telegram> {
+        for (index, telegram) in self.recruitment_queue.iter().enumerate() {
             if self
-                .client
-                .ratelimiter
-                .peek_ratelimit(Target::RecruitmentTelegram(&tg.sender))
+                .limiter
+                .peek(ratelimiter::Target::RecruitmentTelegram {
+                    sender: telegram.sender.clone(),
+                })
                 .await
-                <= PERIOD
+                <= MAX_COOLDOWN
             {
                 return Some(self.recruitment_queue.remove(index).unwrap());
             }
         }
 
-        for (index, tg) in self.standard_queue.iter().enumerate() {
+        for (index, telegram) in self.standard_queue.iter().enumerate() {
             if self
-                .client
-                .ratelimiter
-                .peek_ratelimit(Target::Telegram(&tg.sender))
+                .limiter
+                .peek(ratelimiter::Target::Telegram {
+                    sender: telegram.sender.clone(),
+                })
                 .await
-                <= PERIOD
+                <= MAX_COOLDOWN
             {
                 return Some(self.standard_queue.remove(index).unwrap());
             }
@@ -115,38 +139,47 @@ impl TelegramClient {
         None
     }
 
-    pub(crate) async fn run(&mut self) {
+    async fn send(&mut self, telegram: Telegram) -> Result<(), Error> {
+        let target = match &telegram.tg_type {
+            TgType::Recruitment => Target::RecruitmentTelegram {
+                sender: telegram.sender.clone(),
+            },
+            TgType::Standard => Target::Telegram {
+                sender: telegram.sender.clone(),
+            },
+        };
+
+        if let Err(duration) = self.limiter.acquire(target).await {
+            tracing::info!("sleeping for {} ms", duration.as_millis());
+            tokio::time::sleep(duration).await;
+        }
+
+        tracing::debug!("sending telegram");
+
+        self.client
+            .get(&self.url)
+            .query(&telegram)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
+    async fn run(&mut self) {
         loop {
             match self.rx.try_recv() {
-                Err(e) => match e {
-                    mpsc::error::TryRecvError::Empty => (),
-                    mpsc::error::TryRecvError::Disconnected => {
-                        tracing::error!("Telegram channel disconnected");
-                        break;
-                    }
-                },
-                Ok(command) => {
-                    let response = match command.operation {
-                        Operation::Queue(params) => {
-                            self.queue(params);
-                            Response::Success
-                        }
-                        Operation::Delete(header) => {
-                            self.delete(header);
-                            Response::Success
-                        }
-                        Operation::List => Response::List(self.list()),
-                    };
-
-                    if let Err(e) = command.tx.send(response) {
-                        tracing::error!("Error sending telegram response, {:?}", e);
-                    }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    tracing::warn!("telegram client disconnected");
+                    break;
                 }
+                Ok(command) => self.process_command(command),
             }
 
-            self.send().await;
+            self.try_send().await;
 
-            tokio::time::sleep(PERIOD).await;
+            tokio::time::sleep(MAX_COOLDOWN).await;
         }
     }
 }

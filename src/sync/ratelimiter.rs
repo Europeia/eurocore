@@ -6,7 +6,7 @@ use tokio::time::{Duration, Instant};
 use tracing;
 
 #[derive(Debug)]
-enum Target {
+pub(crate) enum Target {
     RecruitmentTelegram { sender: String },
     Telegram { sender: String },
     Restricted { sender: String },
@@ -37,13 +37,13 @@ enum Response {
     Acquire(Result<(), Duration>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Sender {
     tx: mpsc::Sender<Command>,
 }
 
 impl Sender {
-    async fn peek(&self, target: Target) -> Duration {
+    pub(crate) async fn peek(&self, target: Target) -> Duration {
         let (tx, rx) = oneshot::channel();
 
         if let Err(e) = self.tx.send(Command::new(Action::Peek(target), tx)).await {
@@ -57,7 +57,7 @@ impl Sender {
         }
     }
 
-    async fn acquire(&self, target: Target) -> Result<(), Duration> {
+    pub(crate) async fn acquire(&self, target: Target) -> Result<(), Duration> {
         let (tx, rx) = oneshot::channel();
 
         if let Err(e) = self
@@ -328,7 +328,7 @@ pub(crate) fn new(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{Duration, Instant};
+    use tokio::time::Duration;
 
     fn make_receiver() -> Receiver {
         Receiver::new(

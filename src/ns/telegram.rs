@@ -127,7 +127,7 @@ pub(crate) enum Operation {
 
 #[derive(Debug)]
 pub(crate) enum Response {
-    Success,
+    Ok,
     // Error(Error),
     List(HashMap<String, Vec<response::Telegram>>),
 }
