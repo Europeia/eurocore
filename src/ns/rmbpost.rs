@@ -82,8 +82,14 @@ impl From<IntermediateRmbPost> for RmbPost<Unprepared> {
 }
 
 #[derive(Debug)]
-enum Action {
+pub(crate) enum Action {
     Queue { post: NewRmbPost },
+}
+
+impl Action {
+    pub(crate) fn queue(post: NewRmbPost) -> Self {
+        Self::Queue { post }
+    }
 }
 
 #[derive(Debug)]
@@ -93,8 +99,8 @@ pub(crate) struct Command {
 }
 
 impl Command {
-    pub(crate) fn new(rmbpost: IntermediateRmbPost, tx: oneshot::Sender<Response>) -> Self {
-        Self { rmbpost, tx }
+    pub(crate) fn new(action: Action, tx: oneshot::Sender<Response>) -> Self {
+        Self { action, tx }
     }
 }
 

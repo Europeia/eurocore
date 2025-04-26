@@ -1,15 +1,14 @@
-use super::PERIOD;
-// use crate::core::client::Client;
 use crate::core::error::{ConfigError, Error};
-use crate::ns::rmbpost::{self, Command, IntermediateRmbPost, NewRmbPost};
+use crate::ns::rmbpost::{self, Action, Command, IntermediateRmbPost, NewRmbPost};
+use crate::sync::nations;
 use crate::sync::ratelimiter;
-use crate::types::response;
 use crate::types::response::RmbPostStatus;
 use crate::utils::encode::encode;
-use crate::utils::ratelimiter::Target;
 use quick_xml::de;
+use regex::Regex;
 use serde::Deserialize;
 use sqlx::PgPool;
+use sqlx::Row;
 use sqlx::postgres::PgRow;
 use std::collections::VecDeque;
 use tokio::sync::mpsc::{self, error::TryRecvError};
@@ -24,6 +23,8 @@ struct Client {
     queue: VecDeque<IntermediateRmbPost>,
     pool: PgPool,
     limiter: ratelimiter::Sender,
+    nations: nations::Sender,
+    re: Regex,
     rx: mpsc::Receiver<Command>,
 }
 
@@ -33,6 +34,7 @@ impl Client {
         url: &str,
         pool: PgPool,
         limiter: ratelimiter::Sender,
+        nations: nations::Sender,
         rx: mpsc::Receiver<Command>,
     ) -> Result<Self, ConfigError> {
         let client = reqwest::Client::builder().user_agent(user_agent).build()?;
@@ -43,14 +45,19 @@ impl Client {
             queue: VecDeque::new(),
             pool,
             limiter,
+            nations,
+            re: Regex::new(r#"=(\d+)#"#)?,
             rx,
         })
     }
 
     async fn try_post(&mut self) {
         if let Some(post) = self.get_post().await {
-            if let Err(e) = self.post(post).await {
-                tracing::error!("failed to publish post: {}", e);
+            let job_id = post.job_id;
+
+            match self.post(post).await {
+                Ok(id) => self.update_job(job_id, "success", Some(id), None).await,
+                Err(e) => self.update_job(job_id, "error", None, Some(e)).await,
             }
         }
     }
@@ -72,9 +79,13 @@ impl Client {
         None
     }
 
-    async fn post(&mut self, mut post: IntermediateRmbPost) -> Result<(), Error> {
-        let password: String = self.nations.get_password(&post.nation).await?;
-        let pin: Option<String> = self.nations.get_pin(&post.nation).await?;
+    async fn post(&mut self, mut post: IntermediateRmbPost) -> Result<i32, Error> {
+        let password = self.nations.get_password(&post.nation).await?;
+        let pin = self
+            .nations
+            .get_pin(&post.nation)
+            .await?
+            .unwrap_or_default();
 
         post.text = encode(&post.text);
 
@@ -93,8 +104,8 @@ impl Client {
         let resp = self
             .client
             .post(&self.url)
-            .header("X-Password", password)
-            .header("X-Pin", pin.unwrap_or_default())
+            .header("X-Password", &password)
+            .header("X-Pin", &pin)
             .header(
                 "Content-Type",
                 "application/x-www-form-urlencoded; charset=UTF-8",
@@ -104,12 +115,13 @@ impl Client {
             .await?
             .error_for_status()?;
 
-        let response = de::from_str::<Response>(&resp.text().await?)?;
-
         if let Some(val) = resp.headers().get("X-Pin") {
             self.nations
-                .set_pin(&post.nation, val.to_str().map_err(Error::HeaderDecode)?)
+                .set_pin(post.nation(), val.to_str().map_err(Error::HeaderDecode)?)
+                .await?
         }
+
+        let response = de::from_str::<Response>(&resp.text().await?)?;
 
         if !response.is_ok() {
             return Err(Error::NationStates(response.error.unwrap()));
@@ -124,8 +136,8 @@ impl Client {
         let resp = self
             .client
             .post(&self.url)
-            .header("X-Password", password)
-            .header("X-Pin", pin.unwrap_or_default())
+            .header("X-Password", &password)
+            .header("X-Pin", &pin)
             .header(
                 "Content-Type",
                 "application/x-www-form-urlencoded; charset=UTF-8",
@@ -135,16 +147,29 @@ impl Client {
             .await?
             .error_for_status()?;
 
-        Ok(())
+        let response = de::from_str::<Response>(&resp.text().await?)?;
+
+        if response.is_ok() {
+            Ok(self
+                .re
+                .captures(&response.success.unwrap())
+                .unwrap()
+                .get(1)
+                .unwrap()
+                .as_str()
+                .parse::<i32>()?)
+        } else {
+            Err(Error::NationStates(response.error.unwrap()))
+        }
     }
 
     async fn process_command(&mut self, command: Command) {
         let response = match command.action {
             Action::Queue { post } => {
                 if let Err(e) = self.queue_post(post).await {
-                    Response::Error(e)
+                    rmbpost::Response::Error(e)
                 } else {
-                    Response::Success
+                    rmbpost::Response::Success
                 }
             }
         };
@@ -185,7 +210,34 @@ impl Client {
         Ok(status)
     }
 
-    async fn run(&mut self) {
+    async fn update_job(
+        &self,
+        job_id: i32,
+        status: &str,
+        dispatch_id: Option<i32>,
+        error: Option<Error>,
+    ) {
+        let error: &str = match error {
+            Some(err) => &err.to_string(),
+            None => "",
+        };
+
+        if let Err(e) = sqlx::query(
+            "UPDATE rmbpost_queue SET status = $1, rmbpost_id = $2, error = $3, modified_at = $4 WHERE id = $5;",
+        )
+            .bind(status)
+            .bind(dispatch_id)
+            .bind(error)
+            .bind(chrono::Utc::now())
+            .bind(job_id)
+            .execute(&self.pool)
+            .await
+        {
+            tracing::error!("{}", e);
+        }
+    }
+
+    pub(crate) async fn run(&mut self) {
         loop {
             match self.rx.try_recv() {
                 Err(TryRecvError::Empty) => {}
@@ -196,116 +248,15 @@ impl Client {
                 Ok(command) => self.process_command(command).await,
             }
 
+            self.try_post().await;
+
             tokio::time::sleep(MAX_COOLDOWN).await;
         }
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct RmbPostClient {
-    pool: PgPool,
-    client: Client,
-    queue: VecDeque<IntermediateRmbPost>,
-
-    rx: mpsc::Receiver<Command>,
-}
-
-impl RmbPostClient {
-    pub(crate) fn new(pool: PgPool, client: Client, rx: mpsc::Receiver<Command>) -> Self {
-        Self {
-            pool,
-            client,
-            rx,
-            queue: VecDeque::new(),
-        }
-    }
-
-    async fn post_in(&self, rmbpost: &IntermediateRmbPost) -> Duration {
-        self.client
-            .ratelimiter
-            .peek_ratelimit(Target::Restricted(&rmbpost.nation))
-            .await
-    }
-
-    async fn try_get_rmbpost(&mut self) -> Option<IntermediateRmbPost> {
-        for (index, rmbpost) in self.queue.iter().enumerate() {
-            if self.post_in(rmbpost).await <= PERIOD {
-                return Some(self.queue.remove(index).unwrap());
-            }
-        }
-
-        None
-    }
-
-    async fn update_job(
-        &self,
-        job_id: i32,
-        status: &str,
-        dispatch_id: Option<i32>,
-        error: Option<String>,
-    ) {
-        if let Err(e) = sqlx::query(
-            "UPDATE rmbpost_queue SET status = $1, rmbpost_id = $2, error = $3, modified_at = $4 WHERE id = $5;",
-        )
-        .bind(status)
-        .bind(dispatch_id)
-        .bind(error)
-        .bind(chrono::Utc::now())
-        .bind(job_id)
-        .execute(&self.pool)
-        .await
-        {
-            tracing::error!("{}", e);
-        }
-    }
-
-    async fn try_post(&mut self) {
-        if let Some(rmbpost) = self.try_get_rmbpost().await {
-            tracing::info!("Eligible rmbpost found, posting");
-
-            let job_id = rmbpost.job_id;
-
-            let (status, rmbpost_id, error) = match self.client.post_rmbpost(rmbpost).await {
-                Ok(rmbpost_id) => ("success", Some(rmbpost_id), None),
-                Err(e) => {
-                    tracing::error!("Error posting rmbpost, {:?}", e);
-                    ("error", None, Some(e.to_string()))
-                }
-            };
-
-            self.update_job(job_id, status, rmbpost_id, error).await;
-        }
-    }
-
-    pub(crate) async fn run(&mut self) {
-        loop {
-            match self.rx.try_recv() {
-                Err(e) => match e {
-                    TryRecvError::Empty => (),
-                    TryRecvError::Disconnected => {
-                        tracing::error!("Rmbpost channel disconnected");
-                        break;
-                    }
-                },
-                Ok(command) => {
-                    tracing::info!("Queueing job");
-                    self.queue.push_back(command.rmbpost);
-
-                    if let Err(e) = command.tx.send(Response::Success) {
-                        tracing::error!("Error sending rmbpost response, {:?}", e);
-                    }
-                }
-            }
-
-            self.try_post().await;
-
-            tokio::time::sleep(PERIOD).await;
-        }
-    }
-}
-
-fn post_status(row: PgRow) -> response::RmbPostStatus {
-    response::RmbPostStatus {
+fn post_status(row: PgRow) -> RmbPostStatus {
+    RmbPostStatus {
         id: row.get("id"),
         status: row.get("status"),
         rmbpost_id: row.get("rmbpost_id"),

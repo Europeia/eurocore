@@ -1,6 +1,6 @@
 use crate::core::error::Error;
 use crate::ns::rmbpost;
-use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
+use crate::ns::rmbpost::{Action, IntermediateRmbPost, NewRmbPost};
 use crate::types::response;
 use sqlx::PgPool;
 use sqlx::Row;
@@ -44,7 +44,7 @@ impl RmbpostController {
         let (tx, rx) = oneshot::channel();
 
         self.tx
-            .send(rmbpost::Command::new(rmbpost, tx))
+            .send(rmbpost::Command::new(Action::queue(rmbpost), tx))
             .await
             .unwrap();
 
