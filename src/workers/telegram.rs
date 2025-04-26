@@ -13,7 +13,7 @@ use tracing;
 const MAX_COOLDOWN: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
-struct Client {
+pub(crate) struct Client {
     url: String,
     client: reqwest::Client,
     key: String,
@@ -182,4 +182,17 @@ impl Client {
             tokio::time::sleep(MAX_COOLDOWN).await;
         }
     }
+}
+
+pub(crate) fn new(
+    user_agent: &str,
+    url: &str,
+    key: String,
+    limiter: ratelimiter::Sender,
+) -> Result<(mpsc::Sender<Command>, Client), ConfigError> {
+    let (tx, rx) = mpsc::channel(16);
+
+    let client = Client::new(user_agent, url, key, limiter, rx)?;
+
+    Ok((tx, client))
 }
