@@ -1,3 +1,4 @@
+use crate::core::error::Error;
 use std::collections::HashMap;
 use tokio::sync::{
     mpsc::{self, error::TryRecvError},
@@ -21,6 +22,12 @@ struct Command {
     tx: oneshot::Sender<Response>,
 }
 
+impl Command {
+    fn new(action: Action, tx: oneshot::Sender<Response>) -> Self {
+        Self { action, tx }
+    }
+}
+
 #[derive(Debug)]
 enum Response {
     Ok,
@@ -36,6 +43,94 @@ pub(crate) struct Sender {
 impl Sender {
     fn new(tx: mpsc::Sender<Command>) -> Self {
         Self { tx }
+    }
+
+    pub(crate) async fn get_password(&self, nation: &str) -> Result<String, Error> {
+        let (tx, rx) = oneshot::channel();
+
+        if let Err(e) = self
+            .tx
+            .send(Command::new(
+                Action::get_password {
+                    nation: nation.to_owned(),
+                },
+                tx,
+            ))
+            .await
+        {
+            tracing::error!("failed to send message: {}", e);
+            return Err(Error::Internal);
+        };
+
+        match rx.await {
+            Ok(Response::Password { password }) => {
+                if let Some(password) = password {
+                    Ok(password)
+                } else {
+                    Err(Error::InvalidNation)
+                }
+            }
+            Ok(_) => unreachable!(),
+            Err(e) => {
+                tracing::error!("failed to get password: {}", e);
+                Err(Error::Internal)
+            }
+        }
+    }
+
+    pub(crate) async fn get_pin(&self, nation: &str) -> Result<Option<String>, Error> {
+        let (tx, rx) = oneshot::channel();
+
+        if let Err(e) = self
+            .tx
+            .send(Command::new(
+                Action::get_pin {
+                    nation: nation.to_owned(),
+                },
+                tx,
+            ))
+            .await
+        {
+            tracing::error!("failed to send message: {}", e);
+            return Err(Error::Internal);
+        };
+
+        match rx.await {
+            Ok(Response::Pin { pin }) => Ok(pin),
+            Ok(_) => unreachable!(),
+            Err(e) => {
+                tracing::error!("failed to get pin: {}", e);
+                Err(Error::Internal)
+            }
+        }
+    }
+
+    pub(crate) async fn set_pin(&self, nation: &str, pin: &str) -> Result<(), Error> {
+        let (tx, rx) = oneshot::channel();
+
+        if let Err(e) = self
+            .tx
+            .send(Command::new(
+                Action::set_pin {
+                    nation: nation.to_owned(),
+                    pin: pin.to_owned(),
+                },
+                tx,
+            ))
+            .await
+        {
+            tracing::error!("failed to send message: {}", e);
+            return Err(Error::Internal);
+        };
+
+        match rx.await {
+            Ok(Response::Ok) => Ok(()),
+            Ok(_) => unreachable!(),
+            Err(e) => {
+                tracing::error!("failed to set pin: {}", e);
+                Err(Error::Internal)
+            }
+        }
     }
 }
 
