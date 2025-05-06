@@ -1,21 +1,34 @@
-use crate::core::error::Error;
+use crate::core::error::{ConfigError, Error};
 use crate::ns::rmbpost;
 use crate::ns::rmbpost::{Action, IntermediateRmbPost, NewRmbPost};
+use crate::sync::{nations, ratelimiter};
 use crate::types::response;
+use crate::workers;
 use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::postgres::PgRow;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone, Debug)]
-pub(crate) struct RmbpostController {
+pub(crate) struct Controller {
     pool: PgPool,
     tx: mpsc::Sender<rmbpost::Command>,
 }
 
-impl RmbpostController {
-    pub(crate) fn new(pool: PgPool, tx: mpsc::Sender<rmbpost::Command>) -> Self {
-        Self { pool, tx }
+impl Controller {
+    pub(crate) fn new(
+        user_agent: &str,
+        url: &str,
+        pool: PgPool,
+        limiter: ratelimiter::Sender,
+        nations: nations::Sender,
+    ) -> Result<Self, ConfigError> {
+        let (tx, mut client) =
+            workers::rmbpost::new(user_agent, url, pool.clone(), limiter, nations)?;
+
+        tokio::spawn(async move { client.run().await });
+
+        Ok(Self { pool, tx })
     }
 
     pub(crate) async fn queue(

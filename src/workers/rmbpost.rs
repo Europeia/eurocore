@@ -17,7 +17,7 @@ use tokio::time::Duration;
 const MAX_COOLDOWN: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
-struct Client {
+pub(crate) struct Client {
     url: String,
     client: reqwest::Client,
     queue: VecDeque<IntermediateRmbPost>,
@@ -277,4 +277,18 @@ impl Response {
     fn is_ok(&self) -> bool {
         self.success.is_some()
     }
+}
+
+pub(crate) fn new(
+    user_agent: &str,
+    url: &str,
+    pool: PgPool,
+    limiter: ratelimiter::Sender,
+    nations: nations::Sender,
+) -> Result<(mpsc::Sender<Command>, Client), ConfigError> {
+    let (tx, rx) = mpsc::channel(16);
+
+    let client = Client::new(user_agent, url, pool, limiter, nations, rx)?;
+
+    Ok((tx, client))
 }
