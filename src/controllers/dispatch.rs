@@ -7,11 +7,11 @@ use sqlx::postgres::PgRow;
 use sqlx::types::Json;
 
 #[derive(Clone, Debug)]
-pub(crate) struct DispatchController {
+pub(crate) struct Controller {
     pool: PgPool,
 }
 
-impl DispatchController {
+impl Controller {
     pub(crate) fn new(pool: PgPool) -> Self {
         Self { pool }
     }
