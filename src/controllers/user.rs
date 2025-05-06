@@ -13,14 +13,14 @@ use sqlx::postgres::PgRow;
 use sqlx::{PgPool, Row};
 
 #[derive(Clone)]
-pub(crate) struct UserController {
+pub(crate) struct Controller {
     pool: PgPool,
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
     username_pattern: Regex,
 }
 
-impl std::fmt::Debug for UserController {
+impl std::fmt::Debug for Controller {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UserController")
             .field("username_pattern", &self.username_pattern.as_str())
@@ -28,7 +28,7 @@ impl std::fmt::Debug for UserController {
     }
 }
 
-impl UserController {
+impl Controller {
     pub(crate) fn new(pool: PgPool, jwt_secret: String) -> Result<Self, error::ConfigError> {
         Ok(Self {
             pool,
