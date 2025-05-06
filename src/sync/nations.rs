@@ -12,9 +12,9 @@ struct Nation {
 }
 
 enum Action {
-    get_password { nation: String },
-    get_pin { nation: String },
-    set_pin { nation: String, pin: String },
+    GetPassword { nation: String },
+    GetPin { nation: String },
+    SetPin { nation: String, pin: String },
 }
 
 struct Command {
@@ -51,7 +51,7 @@ impl Sender {
         if let Err(e) = self
             .tx
             .send(Command::new(
-                Action::get_password {
+                Action::GetPassword {
                     nation: nation.to_owned(),
                 },
                 tx,
@@ -84,7 +84,7 @@ impl Sender {
         if let Err(e) = self
             .tx
             .send(Command::new(
-                Action::get_pin {
+                Action::GetPin {
                     nation: nation.to_owned(),
                 },
                 tx,
@@ -111,7 +111,7 @@ impl Sender {
         if let Err(e) = self
             .tx
             .send(Command::new(
-                Action::set_pin {
+                Action::SetPin {
                     nation: nation.to_owned(),
                     pin: pin.to_owned(),
                 },
@@ -149,7 +149,7 @@ impl Receiver {
 
     fn process(&mut self, command: Command) {
         let resp = match command.action {
-            Action::get_password { nation } => {
+            Action::GetPassword { nation } => {
                 if let Some(nation) = self.nations.get(&nation) {
                     Response::Password {
                         password: Some(nation.password.clone()),
@@ -158,7 +158,7 @@ impl Receiver {
                     Response::Password { password: None }
                 }
             }
-            Action::get_pin { nation } => {
+            Action::GetPin { nation } => {
                 if let Some(nation) = self.nations.get(&nation) {
                     Response::Pin {
                         pin: nation.pin.clone(),
@@ -167,7 +167,7 @@ impl Receiver {
                     Response::Pin { pin: None }
                 }
             }
-            Action::set_pin { nation, pin } => {
+            Action::SetPin { nation, pin } => {
                 if let Some(nation) = self.nations.get_mut(&nation) {
                     nation.pin = Some(pin);
                 }
