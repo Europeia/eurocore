@@ -166,7 +166,7 @@ impl Client {
         Ok(())
     }
 
-    async fn run(&mut self) {
+    pub(crate) async fn run(&mut self) {
         loop {
             match self.rx.try_recv() {
                 Err(TryRecvError::Empty) => {}
