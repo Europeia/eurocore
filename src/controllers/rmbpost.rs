@@ -1,23 +1,37 @@
-use crate::core::error::Error;
+use crate::core::error::{ConfigError, Error};
 use crate::ns::rmbpost;
-use crate::ns::rmbpost::{IntermediateRmbPost, NewRmbPost};
+use crate::ns::rmbpost::{Action, IntermediateRmbPost, NewRmbPost};
+use crate::sync::{nations, ratelimiter};
 use crate::types::response;
+use crate::workers;
 use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::postgres::PgRow;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone, Debug)]
-pub(crate) struct RmbpostController {
+pub(crate) struct Controller {
     pool: PgPool,
     tx: mpsc::Sender<rmbpost::Command>,
 }
 
-impl RmbpostController {
-    pub(crate) fn new(pool: PgPool, tx: mpsc::Sender<rmbpost::Command>) -> Self {
-        Self { pool, tx }
+impl Controller {
+    pub(crate) fn new(
+        user_agent: &str,
+        url: &str,
+        pool: PgPool,
+        limiter: ratelimiter::Sender,
+        nations: nations::Sender,
+    ) -> Result<Self, ConfigError> {
+        let (tx, mut client) =
+            workers::rmbpost::new(user_agent, url, pool.clone(), limiter, nations)?;
+
+        tokio::spawn(async move { client.run().await });
+
+        Ok(Self { pool, tx })
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn queue(
         &self,
         rmbpost: NewRmbPost,
@@ -44,7 +58,7 @@ impl RmbpostController {
         let (tx, rx) = oneshot::channel();
 
         self.tx
-            .send(rmbpost::Command::new(rmbpost, tx))
+            .send(rmbpost::Command::new(Action::queue(rmbpost), tx))
             .await
             .unwrap();
 
@@ -55,6 +69,7 @@ impl RmbpostController {
         Ok(status)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_status(&self, id: i32) -> Result<response::RmbPostStatus, Error> {
         match sqlx::query(
             "SELECT
@@ -73,8 +88,8 @@ impl RmbpostController {
         .await
         {
             Ok(status) => Ok(status),
-            Err(sqlx::Error::RowNotFound) => return Err(Error::JobNotFound),
-            Err(e) => return Err(Error::Sql(e)),
+            Err(sqlx::Error::RowNotFound) => Err(Error::JobNotFound),
+            Err(e) => Err(Error::Sql(e)),
         }
     }
 }

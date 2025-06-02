@@ -7,6 +7,7 @@ use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn post(
     State(state): State<AppState>,
     Extension(user): Extension<Option<AuthorizedUser>>,

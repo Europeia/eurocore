@@ -4,9 +4,8 @@ pub(super) mod dispatches {
     use axum::Json;
     use axum::extract::{Path, State};
     use axum::response::IntoResponse;
-    use tracing::instrument;
 
-    #[instrument(skip(state))]
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get(
         State(state): State<AppState>,
         Path(nation): Path<String>,

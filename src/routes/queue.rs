@@ -3,9 +3,8 @@ use crate::core::state::AppState;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use tracing::instrument;
 
-#[instrument(skip(state))]
+#[tracing::instrument(skip_all)]
 pub(crate) async fn dispatch(
     State(state): State<AppState>,
     Path(id): Path<i32>,
@@ -15,7 +14,7 @@ pub(crate) async fn dispatch(
     Ok(Json(status))
 }
 
-#[instrument(skip(state))]
+#[tracing::instrument(skip_all)]
 pub(crate) async fn rmbpost(
     State(state): State<AppState>,
     Path(id): Path<i32>,

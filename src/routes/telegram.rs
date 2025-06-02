@@ -1,18 +1,16 @@
-use axum::extract::{Json, State};
 use axum::Extension;
+use axum::extract::{Json, State};
 use std::collections::HashMap;
-use tokio::sync::oneshot;
-use tracing::instrument;
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
-use crate::ns::telegram::{Command, Header, Operation, Params, Response};
-use crate::types::response;
+use crate::ns::telegram::{Header, Params};
 use crate::types::AuthorizedUser;
+use crate::types::response;
 
-#[instrument(skip(state, user))]
+#[tracing::instrument(skip_all)]
 pub(crate) async fn get(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     Extension(user): Extension<Option<AuthorizedUser>>,
 ) -> Result<Json<HashMap<String, Vec<response::Telegram>>>, Error> {
     match user {
@@ -24,30 +22,14 @@ pub(crate) async fn get(
         None => return Err(Error::Unauthorized),
     }
 
-    let (tx, rx) = oneshot::channel();
+    let telegrams = state.telegram_controller.get().await?;
 
-    state
-        .telegram_sender
-        .send(Command::new(Operation::List, tx))
-        .await
-        .unwrap();
-
-    match rx.await {
-        Ok(Response::List(telegrams)) => Ok(Json(telegrams)),
-        Ok(_) => {
-            tracing::error!("Invalid response from telegram worker");
-            Err(Error::Internal)
-        }
-        Err(e) => {
-            tracing::error!("Error listing telegrams: {}", e);
-            Err(Error::Internal)
-        }
-    }
+    Ok(Json(telegrams))
 }
 
-#[instrument(skip(state, user))]
+#[tracing::instrument(skip_all)]
 pub(crate) async fn post(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     Extension(user): Extension<Option<AuthorizedUser>>,
     Json(params): Json<Vec<Params>>,
 ) -> Result<String, Error> {
@@ -60,26 +42,14 @@ pub(crate) async fn post(
         None => return Err(Error::Unauthorized),
     }
 
-    for param in params {
-        let (tx, rx) = oneshot::channel();
-
-        state
-            .telegram_sender
-            .send(Command::new(Operation::Queue(param), tx))
-            .await
-            .unwrap();
-
-        if let Err(e) = rx.await {
-            tracing::error!("Error queueing telegram: {}", e);
-        }
-    }
+    state.telegram_controller.queue(params).await?;
 
     Ok("Telegrams queued".to_string())
 }
 
-#[instrument(skip(state, user))]
+#[tracing::instrument(skip_all)]
 pub(crate) async fn delete(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     Extension(user): Extension<Option<AuthorizedUser>>,
     Json(params): Json<Header>,
 ) -> Result<String, Error> {
@@ -92,17 +62,7 @@ pub(crate) async fn delete(
         None => return Err(Error::Unauthorized),
     }
 
-    let (tx, rx) = oneshot::channel();
-
-    state
-        .telegram_sender
-        .send(Command::new(Operation::Delete(params), tx))
-        .await
-        .unwrap();
-
-    if let Err(e) = rx.await {
-        tracing::error!("Error deleting telegram: {}", e);
-    }
+    state.telegram_controller.delete(params).await?;
 
     Ok("Telegram deleted".to_string())
 }

@@ -1,4 +1,5 @@
 use super::types::{Mode, Prepared, PrivateCommand, Unprepared};
+use crate::core::error::Error;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use tokio::sync::oneshot;
@@ -81,18 +82,30 @@ impl From<IntermediateRmbPost> for RmbPost<Unprepared> {
 }
 
 #[derive(Debug)]
+pub(crate) enum Action {
+    Queue { post: IntermediateRmbPost },
+}
+
+impl Action {
+    pub(crate) fn queue(post: IntermediateRmbPost) -> Self {
+        Self::Queue { post }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Command {
-    pub(crate) rmbpost: IntermediateRmbPost,
+    pub(crate) action: Action,
     pub(crate) tx: oneshot::Sender<Response>,
 }
 
 impl Command {
-    pub(crate) fn new(rmbpost: IntermediateRmbPost, tx: oneshot::Sender<Response>) -> Self {
-        Self { rmbpost, tx }
+    pub(crate) fn new(action: Action, tx: oneshot::Sender<Response>) -> Self {
+        Self { action, tx }
     }
 }
 
 #[derive(Debug)]
 pub(crate) enum Response {
     Success,
+    Error(Error),
 }

@@ -116,18 +116,39 @@ impl Command {
             tx,
         }
     }
+
+    pub(crate) fn queue(params: Vec<Params>, tx: oneshot::Sender<Response>) -> Self {
+        Self {
+            operation: Operation::Queue(params),
+            tx,
+        }
+    }
+
+    pub(crate) fn delete(header: Header, tx: oneshot::Sender<Response>) -> Self {
+        Self {
+            operation: Operation::Delete(header),
+            tx,
+        }
+    }
+
+    pub(crate) fn list(tx: oneshot::Sender<Response>) -> Self {
+        Self {
+            operation: Operation::List,
+            tx,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) enum Operation {
-    Queue(Params),
+    Queue(Vec<Params>),
     Delete(Header),
     List,
 }
 
 #[derive(Debug)]
 pub(crate) enum Response {
-    Success,
+    Ok,
     // Error(Error),
     List(HashMap<String, Vec<response::Telegram>>),
 }

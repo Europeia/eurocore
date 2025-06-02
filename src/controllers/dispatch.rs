@@ -1,27 +1,45 @@
-use crate::core::error::Error;
-use crate::types::response;
+use crate::core::error::{ConfigError, Error};
+use crate::ns::dispatch::{Command, EditDispatch, IntermediateDispatch, NewDispatch};
+use crate::sync::{nations, ratelimiter};
+use crate::types::response::DispatchStatus;
+use crate::types::{AuthorizedUser, response};
+use crate::workers;
 use serde::Serialize;
 use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::postgres::PgRow;
 use sqlx::types::Json;
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone, Debug)]
-pub(crate) struct DispatchController {
+pub(crate) struct Controller {
     pool: PgPool,
+    tx: mpsc::Sender<Command>,
 }
 
-impl DispatchController {
-    pub(crate) fn new(pool: PgPool) -> Self {
-        Self { pool }
+impl Controller {
+    pub(crate) fn new(
+        user: &str,
+        url: &str,
+        pool: PgPool,
+        limiter: ratelimiter::Sender,
+        nations: nations::Sender,
+    ) -> Result<Self, ConfigError> {
+        let (tx, mut client) = workers::dispatch::new(user, url, pool.clone(), limiter, nations)?;
+
+        tracing::info!("starting dispatch client");
+        tokio::spawn(async move { client.run().await });
+
+        Ok(Self { pool, tx })
     }
 
     // TODO: refactor this to take a more specific type than anything that implements Serialize
-    pub(crate) async fn queue<T: Serialize>(
+    #[tracing::instrument(skip_all)]
+    async fn queue<T: Serialize>(
         &self,
         action: &str,
         payload: Json<T>,
-    ) -> Result<response::DispatchStatus, Error> {
+    ) -> Result<DispatchStatus, Error> {
         Ok(sqlx::query(
             "INSERT INTO dispatch_queue (type, payload, status) VALUES ($1, $2, 'queued')
             RETURNING
@@ -40,6 +58,7 @@ impl DispatchController {
         .await?)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_status(&self, id: i32) -> Result<response::DispatchStatus, Error> {
         match sqlx::query(
             "SELECT
@@ -59,11 +78,12 @@ impl DispatchController {
         .await
         {
             Ok(status) => Ok(status),
-            Err(sqlx::Error::RowNotFound) => return Err(Error::JobNotFound),
-            Err(e) => return Err(Error::Sql(e)),
+            Err(sqlx::Error::RowNotFound) => Err(Error::JobNotFound),
+            Err(e) => Err(Error::Sql(e)),
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_nation(&self, dispatch_id: i32) -> Result<String, Error> {
         match sqlx::query(
             "SELECT nation FROM dispatches WHERE dispatch_id = $1 AND is_active = TRUE;",
@@ -74,11 +94,12 @@ impl DispatchController {
         .await
         {
             Ok(nation) => Ok(nation),
-            Err(sqlx::Error::RowNotFound) => return Err(Error::DispatchNotFound),
-            Err(e) => return Err(Error::Sql(e)),
+            Err(sqlx::Error::RowNotFound) => Err(Error::DispatchNotFound),
+            Err(e) => Err(Error::Sql(e)),
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_one(self, dispatch_id: i32) -> Result<response::Dispatch, Error> {
         match sqlx::query(
             "SELECT
@@ -102,11 +123,12 @@ impl DispatchController {
         .await
         {
             Ok(dispatch) => Ok(dispatch),
-            Err(sqlx::Error::RowNotFound) => return Err(Error::DispatchNotFound),
-            Err(e) => return Err(Error::Sql(e)),
+            Err(sqlx::Error::RowNotFound) => Err(Error::DispatchNotFound),
+            Err(e) => Err(Error::Sql(e)),
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get_all(&self) -> Result<Vec<response::Dispatch>, Error> {
         Ok(sqlx::query(
             "SELECT
@@ -134,6 +156,7 @@ impl DispatchController {
         .await?)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get_by_nation(&self, nation: String) -> Result<Vec<response::Dispatch>, Error> {
         Ok(sqlx::query(
             "SELECT
@@ -163,6 +186,7 @@ impl DispatchController {
         .await?)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get(
         &self,
         nation: Option<String>,
@@ -170,6 +194,95 @@ impl DispatchController {
         match nation {
             Some(nation) => Ok(self.get_by_nation(nation).await?),
             None => Ok(self.get_all().await?),
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub(crate) async fn post(
+        &self,
+        user: AuthorizedUser,
+        new_dispatch: NewDispatch,
+    ) -> Result<DispatchStatus, Error> {
+        let job = self.queue("add", Json(new_dispatch.clone())).await?;
+
+        let dispatch = IntermediateDispatch::add(job.id, user.username, new_dispatch)?;
+
+        let (tx, rx) = oneshot::channel();
+
+        if let Err(e) = self.tx.send(Command::new(dispatch, tx)).await {
+            tracing::error!("unable to send dispatch to actor: {}", e);
+
+            return Err(Error::Internal);
+        }
+
+        match rx.await {
+            Ok(_) => Ok(job),
+            Err(e) => {
+                tracing::error!("received error: {}", e);
+
+                Err(Error::Internal)
+            }
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub(crate) async fn put(
+        &self,
+        user: AuthorizedUser,
+        id: i32,
+        dispatch: EditDispatch,
+    ) -> Result<DispatchStatus, Error> {
+        let job = self.queue("edit", Json(dispatch.clone())).await?;
+
+        let nation = self.get_nation(id).await?;
+
+        let dispatch = IntermediateDispatch::edit(job.id, user.username, id, nation, dispatch)?;
+
+        let (tx, rx) = oneshot::channel();
+
+        if let Err(e) = self.tx.send(Command::new(dispatch, tx)).await {
+            tracing::error!("unable to send dispatch to actor: {}", e);
+
+            return Err(Error::Internal);
+        }
+
+        match rx.await {
+            Ok(_) => Ok(job),
+            Err(e) => {
+                tracing::error!("received error: {}", e);
+
+                Err(Error::Internal)
+            }
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub(crate) async fn delete(
+        &self,
+        user: AuthorizedUser,
+        id: i32,
+    ) -> Result<DispatchStatus, Error> {
+        let job = self.queue("delete", Json(id)).await?;
+
+        let nation = self.get_nation(id).await?;
+
+        let dispatch = IntermediateDispatch::delete(job.id, user.username, id, nation);
+
+        let (tx, rx) = oneshot::channel();
+
+        if let Err(e) = self.tx.send(Command::new(dispatch, tx)).await {
+            tracing::error!("unable to send dispatch to actor: {}", e);
+
+            return Err(Error::Internal);
+        }
+
+        match rx.await {
+            Ok(_) => Ok(job),
+            Err(e) => {
+                tracing::error!("received error: {}", e);
+
+                Err(Error::Internal)
+            }
         }
     }
 }
@@ -187,8 +300,8 @@ fn map_dispatch(row: PgRow) -> response::Dispatch {
     }
 }
 
-fn map_dispatch_status(row: PgRow) -> response::DispatchStatus {
-    response::DispatchStatus {
+fn map_dispatch_status(row: PgRow) -> DispatchStatus {
+    DispatchStatus {
         id: row.get("id"),
         action: row.get("action"),
         status: row.get("status"),

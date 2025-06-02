@@ -4,7 +4,7 @@ use crate::types::user::Claims;
 use crate::types::{AuthorizedUser, Username};
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{header, Response};
+use axum::http::{Response, header};
 use axum::middleware::Next;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation};
@@ -13,14 +13,14 @@ use sqlx::postgres::PgRow;
 use sqlx::{PgPool, Row};
 
 #[derive(Clone)]
-pub(crate) struct UserController {
+pub(crate) struct Controller {
     pool: PgPool,
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
     username_pattern: Regex,
 }
 
-impl std::fmt::Debug for UserController {
+impl std::fmt::Debug for Controller {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UserController")
             .field("username_pattern", &self.username_pattern.as_str())
@@ -28,7 +28,7 @@ impl std::fmt::Debug for UserController {
     }
 }
 
-impl UserController {
+impl Controller {
     pub(crate) fn new(pool: PgPool, jwt_secret: String) -> Result<Self, error::ConfigError> {
         Ok(Self {
             pool,
@@ -38,6 +38,7 @@ impl UserController {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_user_by_username(
         &self,
         username: &str,
@@ -70,6 +71,7 @@ impl UserController {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_username_by_id(&self, id: i32) -> Result<Option<Username>, Error> {
         match sqlx::query("SELECT username FROM users WHERE id = $1")
             .bind(id)
@@ -83,6 +85,7 @@ impl UserController {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn register(
         &self,
         username: &str,
@@ -98,7 +101,7 @@ impl UserController {
             ));
         }
 
-        let password_hash = self.hash(&password)?;
+        let password_hash = self.hash(password)?;
 
         let id: i32 = match sqlx::query(
             "INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id;",
@@ -111,7 +114,7 @@ impl UserController {
         {
             Ok(id) => id,
             Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-                return Err(Error::UserAlreadyExists)
+                return Err(Error::UserAlreadyExists);
             }
             Err(e) => return Err(Error::Sql(e)),
         };
@@ -128,6 +131,7 @@ impl UserController {
         Ok((user, token))
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn login(
         &self,
         username: &str,
@@ -138,7 +142,7 @@ impl UserController {
             .await?
             .ok_or(Error::InvalidUsername)?;
 
-        if let false = bcrypt::verify(password, &user.password_hash)? {
+        if !bcrypt::verify(password, &user.password_hash)? {
             return Err(Error::Unauthorized);
         };
 
@@ -147,6 +151,7 @@ impl UserController {
         Ok((user, token))
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn update_password(
         &self,
         username: &str,
@@ -162,7 +167,7 @@ impl UserController {
     }
 
     fn hash(&self, value: &str) -> Result<String, Error> {
-        bcrypt::hash(&value, 12).map_err(Error::Bcrypt)
+        bcrypt::hash(value, 12).map_err(Error::Bcrypt)
     }
 
     pub(crate) fn encode_jwt(&self, user: &AuthorizedUser) -> Result<String, Error> {
@@ -197,6 +202,7 @@ impl UserController {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn authenticate(
     State(state): State<AppState>,
     mut request: Request,
@@ -234,6 +240,8 @@ fn map_user(row: PgRow) -> AuthorizedUser {
         id: row.get("id"),
         username: row.get("username"),
         password_hash: row.get("password_hash"),
-        claims: row.get("permissions"),
+        claims: row
+            .get::<Option<Vec<String>>, _>("permissions")
+            .unwrap_or_default(),
     }
 }
