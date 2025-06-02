@@ -3,13 +3,13 @@ use crate::core::error;
 use crate::core::state::AppState;
 use crate::routes::{admin, dispatch, nations, queue, rmbpost, telegram, user};
 use axum::error_handling::HandleErrorLayer;
-use axum::routing::patch;
+use axum::routing::{options, patch};
 use axum::{
+    Router,
     extract::{MatchedPath, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode},
     middleware,
     routing::{get, post},
-    Router,
 };
 use std::time::Duration;
 use tower::ServiceBuilder;
@@ -20,14 +20,14 @@ use tower_http::{
 };
 use tracing::info_span;
 
-pub(crate) async fn routes(state: AppState) -> Router {
-    let dispatch_nations = Box::leak(Box::new(
-        state.client.get_dispatch_nation_names().await.join(","),
-    ));
+pub(crate) async fn routes(
+    state: AppState,
+    dispatch_nations: Vec<String>,
+    rmbpost_nations: Vec<String>,
+) -> Router {
+    let dispatch_nations = Box::leak(Box::new(dispatch_nations.join(",")));
 
-    let rmbpost_nations = Box::leak(Box::new(
-        state.client.get_rmbpost_nation_names().await.join(","),
-    ));
+    let rmbpost_nations = Box::leak(Box::new(rmbpost_nations.join(",")));
 
     // /dispatches/...
     let dispatch_router = Router::new()

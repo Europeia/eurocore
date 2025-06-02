@@ -38,6 +38,7 @@ impl Controller {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_user_by_username(
         &self,
         username: &str,
@@ -70,6 +71,7 @@ impl Controller {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_username_by_id(&self, id: i32) -> Result<Option<Username>, Error> {
         match sqlx::query("SELECT username FROM users WHERE id = $1")
             .bind(id)
@@ -83,6 +85,7 @@ impl Controller {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn register(
         &self,
         username: &str,
@@ -98,7 +101,7 @@ impl Controller {
             ));
         }
 
-        let password_hash = self.hash(&password)?;
+        let password_hash = self.hash(password)?;
 
         let id: i32 = match sqlx::query(
             "INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id;",
@@ -128,6 +131,7 @@ impl Controller {
         Ok((user, token))
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn login(
         &self,
         username: &str,
@@ -138,7 +142,7 @@ impl Controller {
             .await?
             .ok_or(Error::InvalidUsername)?;
 
-        if let false = bcrypt::verify(password, &user.password_hash)? {
+        if !bcrypt::verify(password, &user.password_hash)? {
             return Err(Error::Unauthorized);
         };
 
@@ -147,6 +151,7 @@ impl Controller {
         Ok((user, token))
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn update_password(
         &self,
         username: &str,
@@ -162,7 +167,7 @@ impl Controller {
     }
 
     fn hash(&self, value: &str) -> Result<String, Error> {
-        bcrypt::hash(&value, 12).map_err(Error::Bcrypt)
+        bcrypt::hash(value, 12).map_err(Error::Bcrypt)
     }
 
     pub(crate) fn encode_jwt(&self, user: &AuthorizedUser) -> Result<String, Error> {
@@ -197,6 +202,7 @@ impl Controller {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn authenticate(
     State(state): State<AppState>,
     mut request: Request,

@@ -1,14 +1,15 @@
-use axum::extract::{Extension, Path, State};
-use axum::http::{header, StatusCode};
-use axum::response::IntoResponse;
 use axum::Json;
+use axum::extract::{Extension, Path, State};
+use axum::http::{StatusCode, header};
+use axum::response::IntoResponse;
 
 use crate::core::error::Error;
 use crate::core::state::AppState;
+use crate::types::AuthorizedUser;
 use crate::types::request;
 use crate::types::response;
-use crate::types::AuthorizedUser;
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn register(
     State(state): State<AppState>,
     Json(input): Json<request::LoginData>,
@@ -25,6 +26,7 @@ pub(crate) async fn register(
     ))
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn login(
     State(state): State<AppState>,
     Json(input): Json<request::LoginData>,
@@ -37,6 +39,7 @@ pub(crate) async fn login(
     Ok(Json(response::Login::new(&user.username, &token)))
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn get(
     State(state): State<AppState>,
     Path(id): Path<i32>,
@@ -50,6 +53,7 @@ pub(crate) async fn get(
     Ok(Json(response::User::new(id, &username)))
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn get_by_username(
     State(state): State<AppState>,
     Path(username): Path<String>,
@@ -66,6 +70,7 @@ pub(crate) async fn get_by_username(
     Ok(Json(response::User::new(user.id, &user.username)))
 }
 
+#[tracing::instrument(skip_all)]
 pub(crate) async fn update_password(
     State(state): State<AppState>,
     Extension(user): Extension<Option<AuthorizedUser>>,

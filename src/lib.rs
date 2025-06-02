@@ -8,18 +8,17 @@ pub(crate) mod types;
 pub(crate) mod utils;
 pub(crate) mod workers;
 
+use crate::controllers::{dispatch, rmbpost, telegram, user};
+use crate::core::error::ConfigError as Error;
+use crate::core::{config::Args, state::AppState};
+use crate::routes::router;
+use crate::sync::nations;
+use crate::sync::ratelimiter;
 use config::Config;
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-
-use crate::core::error::ConfigError as Error;
-use crate::core::{client::Client, config::Args, state::AppState};
-use crate::ns::nation::{NationList, create_nations_map};
-use crate::utils::ratelimiter::Ratelimiter;
-use crate::workers::rmbpost::RmbPostClient;
-use crate::workers::{dispatch::DispatchClient, telegram::TelegramClient};
 
 pub async fn run() -> Result<(), Error> {
     let config = Config::builder()
@@ -27,6 +26,11 @@ pub async fn run() -> Result<(), Error> {
         .build()?;
 
     let config = config.try_deserialize::<Args>()?;
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_new(config.log_level).unwrap_or_default())
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let database_url = format!(
         "postgresql://{}:{}@{}:{}/{}",
@@ -42,62 +46,56 @@ pub async fn run() -> Result<(), Error> {
         .connect(&database_url)
         .await?;
 
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_new(config.log_level).unwrap_or_default())
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
-    let ratelimiter = Ratelimiter::new(
+    let ratelimiter = ratelimiter::new(
         50,
-        Duration::from_millis(30_050),
-        Duration::from_millis(30_050),
-        Duration::from_millis(180_050),
+        Duration::from_secs(30),
+        Duration::from_secs(30),
+        Duration::from_secs(180),
         Duration::from_secs(60),
     );
 
-    let client = Client::new(
+    let dispatch_nations = nations::new(nations::Source::Str(config.dispatch_nations))?;
+    let rmbpost_nations = nations::new(nations::Source::Str(config.rmbpost_nations))?;
+
+    let dispatch_nation_names = dispatch_nations.list_nations().await.unwrap();
+    let rmbpost_nation_names = rmbpost_nations.list_nations().await.unwrap();
+
+    let dispatch_controller = dispatch::Controller::new(
         &config.user,
-        NationList::new(create_nations_map(&config.dispatch_nations)),
-        NationList::new(create_nations_map(&config.rmbpost_nations)),
-        ratelimiter,
+        "https://www.nationstates.net/cgi-bin/api.cgi",
+        db_pool.clone(),
+        ratelimiter.clone(),
+        dispatch_nations,
     )?;
 
-    let (telegram_sender, telegram_receiver) = tokio::sync::mpsc::channel(8);
+    let rmbpost_controller = rmbpost::Controller::new(
+        &config.user,
+        "https://www.nationstates.net/cgi-bin/api.cgi",
+        db_pool.clone(),
+        ratelimiter.clone(),
+        rmbpost_nations,
+    )?;
 
-    let mut telegram_client = TelegramClient::new(
-        client.clone(),
+    let telegram_controller = telegram::Controller::new(
+        &config.user,
+        "https://www.nationstates.net/cgi-bin/api.cgi",
         config.telegram_client_key,
-        telegram_receiver,
+        ratelimiter.clone(),
+        db_pool.clone(),
     )?;
 
-    let (dispatch_sender, dispatch_receiver) = tokio::sync::mpsc::channel(8);
-
-    let mut dispatch_client =
-        DispatchClient::new(db_pool.clone(), client.clone(), dispatch_receiver);
-
-    let (rmbpost_sender, rmbpost_receiver) = tokio::sync::mpsc::channel(8);
-
-    let mut rmbpost_client = RmbPostClient::new(db_pool.clone(), client.clone(), rmbpost_receiver);
+    let user_controller = user::Controller::new(db_pool.clone(), config.secret)?;
 
     let state = AppState::new(
-        db_pool.clone(),
-        config.secret,
-        client,
-        telegram_sender,
-        dispatch_sender,
-        rmbpost_sender,
-    )
-    .await?;
+        user_controller,
+        dispatch_controller,
+        rmbpost_controller,
+        telegram_controller,
+    );
 
-    tokio::spawn(async move { telegram_client.run().await });
+    sqlx::migrate!().run(&db_pool).await?;
 
-    tokio::spawn(async move { dispatch_client.run().await });
-
-    tokio::spawn(async move { rmbpost_client.run().await });
-
-    sqlx::migrate!().run(&db_pool.clone()).await?;
-
-    let app = routes::router::routes(state.clone()).await;
+    let app = router::routes(state.clone(), dispatch_nation_names, rmbpost_nation_names).await;
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port)).await?;
 

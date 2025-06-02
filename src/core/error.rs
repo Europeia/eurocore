@@ -1,7 +1,8 @@
-use axum::http::header::InvalidHeaderName;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use axum::BoxError;
+use axum::http::StatusCode;
+use axum::http::header::InvalidHeaderName;
+use axum::response::{IntoResponse, Response};
+use std::env;
 use std::num::ParseIntError;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,6 +19,10 @@ pub enum ConfigError {
     HTTPClient(#[from] reqwest::Error),
     #[error("Regex error: {0}")]
     Regex(#[from] regex::Error),
+    #[error("Environment error: {0}")]
+    Env(#[from] env::VarError),
+    #[error("parse nations error: {0}")]
+    Nations(String),
 }
 
 #[derive(Debug, thiserror::Error)]

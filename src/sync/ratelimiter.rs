@@ -3,7 +3,6 @@ use std::collections::{HashMap, VecDeque};
 use std::ops::{Add, Mul};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
-use tracing;
 
 #[derive(Debug)]
 pub(crate) enum Target {
@@ -13,6 +12,27 @@ pub(crate) enum Target {
     Standard,
 }
 
+impl Target {
+    pub(crate) fn recruitment(sender: &str) -> Self {
+        Self::RecruitmentTelegram {
+            sender: sender.to_string(),
+        }
+    }
+
+    pub(crate) fn telegram(sender: &str) -> Self {
+        Self::Telegram {
+            sender: sender.to_string(),
+        }
+    }
+
+    pub(crate) fn restricted(sender: &str) -> Self {
+        Self::Restricted {
+            sender: sender.to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
 enum Action {
     Peek(Target),
     Acquire(Target),
@@ -43,6 +63,7 @@ pub(crate) struct Sender {
 }
 
 impl Sender {
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn peek(&self, target: Target) -> Duration {
         let (tx, rx) = oneshot::channel();
 
@@ -57,6 +78,7 @@ impl Sender {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn acquire(&self, target: Target) -> Result<(), Duration> {
         let (tx, rx) = oneshot::channel();
 
@@ -114,6 +136,7 @@ impl Receiver {
     }
 
     /// remove expired requests from bucket
+    #[tracing::instrument(skip_all)]
     fn clean_buckets(&mut self) {
         let now = Instant::now();
 
@@ -131,6 +154,7 @@ impl Receiver {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn peek(&mut self, target: &Target) -> Duration {
         let values = match target {
             Target::RecruitmentTelegram { sender } => {
@@ -162,6 +186,7 @@ impl Receiver {
     /// Naive method to check when next recruitment telegram can be sent. In this context, naive
     /// means that it does not take into account other limits that may prevent a recruitment telegram
     /// from being sent (e.g. the standard telegram rate limit).
+    #[tracing::instrument(skip_all)]
     fn peek_recruitment(&mut self) -> Duration {
         self.clean_buckets();
 
@@ -180,6 +205,7 @@ impl Receiver {
     /// Naive method to check when next telegram can be sent. In this context, naive
     /// means that it does not take into account other limits that may prevent a telegram
     /// from being sent (e.g. the restricted action rate limit).
+    #[tracing::instrument(skip_all)]
     fn peek_telegram(&mut self) -> Duration {
         self.clean_buckets();
 
@@ -197,6 +223,7 @@ impl Receiver {
     /// Naive method to check when the next restricted action can be performed by a given nation.
     /// In this context, naive means that it does not take into account other limits that may
     /// prevent a restricted action from being performed (e.g. the standard rate limit).
+    #[tracing::instrument(skip_all)]
     fn peek_restricted(&mut self, sender: &str) -> Duration {
         self.clean_buckets();
 
@@ -215,6 +242,7 @@ impl Receiver {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn peek_standard(&mut self) -> Duration {
         self.clean_buckets();
 
@@ -227,6 +255,7 @@ impl Receiver {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn acquire(&mut self, target: Target) -> Result<(), Duration> {
         let wait = self.peek(&target);
 
@@ -275,6 +304,7 @@ impl Receiver {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn process(&mut self, action: Action) -> Result<Response, Error> {
         match action {
             Action::Peek(target) => Ok(Response::Peek(self.peek(&target))),
@@ -283,20 +313,20 @@ impl Receiver {
         }
     }
 
-    fn run(&mut self) {
+    #[tracing::instrument(skip_all)]
+    async fn run(&mut self) {
         loop {
-            match self.rx.try_recv() {
-                Err(e) => match e {
-                    mpsc::error::TryRecvError::Empty => (),
-                    mpsc::error::TryRecvError::Disconnected => {
-                        tracing::warn!("rate limiter disconnected, exiting");
-                        break;
-                    }
-                },
-                Ok(command) => {
-                    tracing::info!("command received");
+            match self.rx.recv().await {
+                None => {
+                    tracing::warn!("channel is closed");
+                    break;
+                }
+                Some(command) => {
                     let resp = self.process(command.action);
-                    command.tx.send(resp.unwrap()).unwrap()
+
+                    if let Err(_e) = command.tx.send(resp.unwrap()) {
+                        tracing::error!("failed to send response")
+                    }
                 }
             }
         }
@@ -309,20 +339,25 @@ pub(crate) fn new(
     telegram_cooldown: Duration,
     recruitment_cooldown: Duration,
     restricted_action_cooldown: Duration,
-) -> (Sender, Receiver) {
+) -> Sender {
     let (tx, rx) = mpsc::channel(16);
 
-    (
-        Sender { tx },
-        Receiver::new(
-            rx,
-            max_requests,
-            bucket_length,
-            telegram_cooldown,
-            recruitment_cooldown,
-            restricted_action_cooldown,
-        ),
-    )
+    let sender = Sender { tx };
+
+    let mut receiver = Receiver::new(
+        rx,
+        max_requests,
+        bucket_length,
+        telegram_cooldown,
+        recruitment_cooldown,
+        restricted_action_cooldown,
+    );
+
+    tokio::task::spawn(async move {
+        receiver.run().await;
+    });
+
+    sender
 }
 
 #[cfg(test)]

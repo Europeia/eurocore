@@ -1,5 +1,6 @@
+use super::PERIOD;
 use crate::core::error::{ConfigError, Error};
-use crate::ns::rmbpost::{self, Action, Command, IntermediateRmbPost, NewRmbPost};
+use crate::ns::rmbpost::{self, Action, Command, IntermediateRmbPost};
 use crate::sync::nations;
 use crate::sync::ratelimiter;
 use crate::types::response::RmbPostStatus;
@@ -11,10 +12,7 @@ use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::postgres::PgRow;
 use std::collections::VecDeque;
-use tokio::sync::mpsc::{self, error::TryRecvError};
-use tokio::time::Duration;
-
-const MAX_COOLDOWN: Duration = Duration::from_millis(100);
+use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub(crate) struct Client {
@@ -51,6 +49,7 @@ impl Client {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     async fn try_post(&mut self) {
         if let Some(post) = self.get_post().await {
             let job_id = post.job_id;
@@ -62,6 +61,7 @@ impl Client {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get_post(&mut self) -> Option<IntermediateRmbPost> {
         for (index, post) in self.queue.iter().enumerate() {
             if self
@@ -70,7 +70,7 @@ impl Client {
                     sender: post.nation.clone(),
                 })
                 .await
-                <= MAX_COOLDOWN
+                <= PERIOD
             {
                 return Some(self.queue.remove(index).unwrap());
             }
@@ -79,6 +79,7 @@ impl Client {
         None
     }
 
+    #[tracing::instrument(skip_all)]
     async fn post(&mut self, mut post: IntermediateRmbPost) -> Result<i32, Error> {
         let password = self.nations.get_password(&post.nation).await?;
         let pin = self
@@ -163,53 +164,26 @@ impl Client {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn process_command(&mut self, command: Command) {
         let response = match command.action {
             Action::Queue { post } => {
-                if let Err(e) = self.queue_post(post).await {
-                    rmbpost::Response::Error(e)
-                } else {
-                    rmbpost::Response::Success
-                }
+                self.queue_post(post).await;
+                rmbpost::Response::Success
             }
         };
 
-        if let Err(_) = command.tx.send(response) {
+        if command.tx.send(response).is_err() {
             tracing::error!("failed to send response");
         }
     }
 
-    async fn queue_post(&mut self, post: NewRmbPost) -> Result<RmbPostStatus, Error> {
-        let status = sqlx::query(
-            "INSERT INTO
-          rmbpost_queue (nation, region, content, status)
-        VALUES
-          ($1, $2, $3, 'queued')
-        RETURNING
-          id,
-          status,
-          rmbpost_id,
-          error,
-          created_at,
-          modified_at;",
-        )
-        .bind(&post.nation)
-        .bind(&post.region)
-        .bind(&post.text)
-        .map(post_status)
-        .fetch_one(&self.pool)
-        .await?;
-
-        self.queue.push_back(IntermediateRmbPost::new(
-            status.id,
-            post.nation,
-            post.region,
-            post.text,
-        ));
-
-        Ok(status)
+    #[tracing::instrument(skip_all)]
+    async fn queue_post(&mut self, post: IntermediateRmbPost) {
+        self.queue.push_back(post);
     }
 
+    #[tracing::instrument(skip_all)]
     async fn update_job(
         &self,
         job_id: i32,
@@ -237,20 +211,20 @@ impl Client {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn run(&mut self) {
+        let mut interval = tokio::time::interval(PERIOD);
+
         loop {
-            match self.rx.try_recv() {
-                Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => {
-                    tracing::warn!("client disconnected");
-                    break;
+            tokio::select! {
+                Some(command) = self.rx.recv() => {
+                    self.process_command(command).await;
                 }
-                Ok(command) => self.process_command(command).await,
+
+                _ = interval.tick() => {
+                    self.try_post().await;
+                }
             }
-
-            self.try_post().await;
-
-            tokio::time::sleep(MAX_COOLDOWN).await;
         }
     }
 }

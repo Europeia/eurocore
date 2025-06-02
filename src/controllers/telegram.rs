@@ -1,5 +1,5 @@
 use crate::core::error::{ConfigError, Error};
-use crate::ns::telegram::{Command, Header, Operation, Params, Response};
+use crate::ns::telegram::{Command, Header, Params, Response};
 use crate::sync::ratelimiter;
 use crate::types::response;
 use crate::workers;
@@ -30,6 +30,7 @@ impl Controller {
         Ok(Self { pool, tx })
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get(&mut self) -> Result<HashMap<String, Vec<response::Telegram>>, Error> {
         let (tx, rx) = oneshot::channel();
 
@@ -48,6 +49,7 @@ impl Controller {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn queue(&mut self, params: Vec<Params>) -> Result<(), Error> {
         let (tx, rx) = oneshot::channel();
 
@@ -66,6 +68,7 @@ impl Controller {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn delete(&mut self, header: Header) -> Result<(), Error> {
         let (tx, rx) = oneshot::channel();
 

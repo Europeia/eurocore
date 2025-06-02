@@ -83,11 +83,11 @@ impl From<IntermediateRmbPost> for RmbPost<Unprepared> {
 
 #[derive(Debug)]
 pub(crate) enum Action {
-    Queue { post: NewRmbPost },
+    Queue { post: IntermediateRmbPost },
 }
 
 impl Action {
-    pub(crate) fn queue(post: NewRmbPost) -> Self {
+    pub(crate) fn queue(post: IntermediateRmbPost) -> Self {
         Self::Queue { post }
     }
 }

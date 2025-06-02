@@ -1,3 +1,4 @@
+use super::PERIOD;
 use crate::core::error::{ConfigError, Error};
 use crate::ns::telegram::{Command, Header, Operation, Params, Response, Telegram, TgType};
 use crate::sync::ratelimiter;
@@ -6,11 +7,6 @@ use crate::types::response;
 use reqwest::{self, ClientBuilder};
 use std::collections::{HashMap, VecDeque};
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::error::TryRecvError;
-use tokio::time::Duration;
-use tracing;
-
-const MAX_COOLDOWN: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 pub(crate) struct Client {
@@ -44,10 +40,11 @@ impl Client {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     fn process_command(&mut self, command: Command) {
         let response = match command.operation {
-            Operation::Queue(telegram) => {
-                self.queue(telegram);
+            Operation::Queue(telegrams) => {
+                self.queue(telegrams);
                 Response::Ok
             }
             Operation::Delete(header) => {
@@ -57,20 +54,24 @@ impl Client {
             Operation::List => Response::List(self.list()),
         };
 
-        if let Err(_) = command.tx.send(response) {
+        if command.tx.send(response).is_err() {
             tracing::error!("failed to send response");
         }
     }
 
-    fn queue(&mut self, params: Params) {
-        let telegram = Telegram::from_params(&self.key, params);
+    #[tracing::instrument(skip_all)]
+    fn queue(&mut self, params: Vec<Params>) {
+        for param in params {
+            let telegram = Telegram::from_params(&self.key, param);
 
-        match &telegram.tg_type {
-            TgType::Standard => self.standard_queue.push_back(telegram),
-            TgType::Recruitment => self.recruitment_queue.push_back(telegram),
+            match &telegram.tg_type {
+                TgType::Standard => self.standard_queue.push_back(telegram),
+                TgType::Recruitment => self.recruitment_queue.push_back(telegram),
+            }
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn delete(&mut self, header: Header) {
         self.standard_queue
             .retain(|telegram| telegram.header() != header);
@@ -79,6 +80,7 @@ impl Client {
             .retain(|telegram| telegram.header() != header);
     }
 
+    #[tracing::instrument(skip_all)]
     fn list(&self) -> HashMap<String, Vec<response::Telegram>> {
         let mut response = HashMap::new();
 
@@ -101,6 +103,7 @@ impl Client {
         response
     }
 
+    #[tracing::instrument(skip_all)]
     async fn try_send(&mut self) {
         if let Some(telegram) = self.get_telegram().await {
             if let Err(e) = self.send(telegram).await {
@@ -109,6 +112,7 @@ impl Client {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get_telegram(&mut self) -> Option<Telegram> {
         for (index, telegram) in self.recruitment_queue.iter().enumerate() {
             if self
@@ -117,7 +121,7 @@ impl Client {
                     sender: telegram.sender.clone(),
                 })
                 .await
-                <= MAX_COOLDOWN
+                <= PERIOD
             {
                 return Some(self.recruitment_queue.remove(index).unwrap());
             }
@@ -130,7 +134,7 @@ impl Client {
                     sender: telegram.sender.clone(),
                 })
                 .await
-                <= MAX_COOLDOWN
+                <= PERIOD
             {
                 return Some(self.standard_queue.remove(index).unwrap());
             }
@@ -139,6 +143,7 @@ impl Client {
         None
     }
 
+    #[tracing::instrument(skip_all)]
     async fn send(&mut self, telegram: Telegram) -> Result<(), Error> {
         let target = match &telegram.tg_type {
             TgType::Recruitment => Target::RecruitmentTelegram {
@@ -166,20 +171,21 @@ impl Client {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn run(&mut self) {
+        let mut interval = tokio::time::interval(PERIOD);
+
         loop {
-            match self.rx.try_recv() {
-                Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => {
-                    tracing::warn!("telegram client disconnected");
-                    break;
+            tokio::select! {
+                Some(command) = self.rx.recv() => {
+                    self.process_command(command);
                 }
-                Ok(command) => self.process_command(command),
+
+                _  = interval.tick() => {
+                    self.try_send().await;
+                }
+
             }
-
-            self.try_send().await;
-
-            tokio::time::sleep(MAX_COOLDOWN).await;
         }
     }
 }

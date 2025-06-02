@@ -31,6 +31,7 @@ impl Controller {
         Ok(Self { pool, tx })
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn queue(
         &self,
         rmbpost: NewRmbPost,
@@ -68,6 +69,7 @@ impl Controller {
         Ok(status)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn get_status(&self, id: i32) -> Result<response::RmbPostStatus, Error> {
         match sqlx::query(
             "SELECT
@@ -86,8 +88,8 @@ impl Controller {
         .await
         {
             Ok(status) => Ok(status),
-            Err(sqlx::Error::RowNotFound) => return Err(Error::JobNotFound),
-            Err(e) => return Err(Error::Sql(e)),
+            Err(sqlx::Error::RowNotFound) => Err(Error::JobNotFound),
+            Err(e) => Err(Error::Sql(e)),
         }
     }
 }
