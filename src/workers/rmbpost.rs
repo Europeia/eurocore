@@ -81,12 +81,8 @@ impl Client {
 
     #[tracing::instrument(skip_all)]
     async fn post(&mut self, mut post: IntermediateRmbPost) -> Result<i32, Error> {
-        let password = self.nations.get_password(&post.nation).await?;
-        let pin = self
-            .nations
-            .get_pin(&post.nation)
-            .await?
-            .unwrap_or_default();
+        let nation = post.nation.clone();
+        let password = self.nations.get_password(&nation).await?;
 
         post.text = encode(&post.text);
 
@@ -106,7 +102,10 @@ impl Client {
             .client
             .post(&self.url)
             .header("X-Password", &password)
-            .header("X-Pin", &pin)
+            .header(
+                "X-Pin",
+                &self.nations.get_pin(&nation).await?.unwrap_or_default(),
+            )
             .header(
                 "Content-Type",
                 "application/x-www-form-urlencoded; charset=UTF-8",
@@ -138,7 +137,10 @@ impl Client {
             .client
             .post(&self.url)
             .header("X-Password", &password)
-            .header("X-Pin", &pin)
+            .header(
+                "X-Pin",
+                &self.nations.get_pin(&nation).await?.unwrap_or_default(),
+            )
             .header(
                 "Content-Type",
                 "application/x-www-form-urlencoded; charset=UTF-8",
